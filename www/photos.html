@@ -63,13 +63,37 @@ var CONFIG = {
   fill: false,                      // true = tüm fotoğraflar ekranı doldurur (kenarlar kırpılır), false = fotoğrafın tamamı görünür
   fillPortrait: true,               // dikey fotoğraflar her zaman ekranı doldurur (siyah bant kalmaz)
   clock: true,                      // köşede saat/tarih
+  lang: "auto",                     // "auto" | "tr" | "en"
   haUrl: ""
 };
 /* ======================================================= */
 
 var VERSION = "1.2.0";
-var DAYS = ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"];
-var MONTHS = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+// UI language: "auto" follows the iPad's language (Turkish if it is set to Turkish, otherwise English)
+var LANG = (CONFIG.lang === "tr" || CONFIG.lang === "en") ? CONFIG.lang : (/^tr/i.test(navigator.language || "") ? "tr" : "en");
+var L10N = {
+  tr: {
+    days: ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"],
+    months: ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"],
+    empty: "<b>Henüz fotoğraf yok</b>Fotoğrafları HA'daki <code>www/photos</code> klasörüne atın<br>(Samba share: <code>config/www/photos</code>). En geç bir dakikada görünürler.",
+    noSensor: "<b>Fotoğraf listesi bulunamadı</b><code>{s}</code> sensörü HA'da yok.",
+    net: "<b>Home Assistant'a ulaşılamıyor</b>Bağlantı gelince fotoğraflar kendiliğinden başlayacak.",
+    badTok: "Token geçersiz ya da süresi dolmuş. Yeni bir token yapıştırın.",
+    setupT: "Home Assistant için bir long-lived access token gerekiyor (Profile → Security → Long-lived access tokens).",
+    save: "Kaydet"
+  },
+  en: {
+    days: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+    months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+    empty: "<b>No photos yet</b>Put pictures into <code>www/photos</code> on Home Assistant<br>(Samba share: <code>config/www/photos</code>). They show up within a minute.",
+    noSensor: "<b>Photo list not found</b>The <code>{s}</code> sensor doesn't exist in Home Assistant.",
+    net: "<b>Can't reach Home Assistant</b>The slideshow starts by itself once it's back.",
+    badTok: "The token is invalid or expired. Paste a new one.",
+    setupT: "A Home Assistant long-lived access token is needed (Profile → Security → Long-lived access tokens).",
+    save: "Save"
+  }
+};
+var T = L10N[LANG];
 
 function $(s) { return document.querySelector(s); }
 function hasC(el, c) { return (" " + el.className + " ").indexOf(" " + c + " ") > -1; }
@@ -130,11 +154,7 @@ function loadList(cb) {
   });
 }
 function note(k) {
-  var t = {
-    empty: "<b>Henüz fotoğraf yok</b>Fotoğrafları HA'daki <code>www/photos</code> klasörüne atın<br>(Samba share: <code>config/www/photos</code>). En geç bir dakikada görünürler.",
-    noSensor: "<b>Fotoğraf listesi bulunamadı</b><code>" + CONFIG.sensor + "</code> sensörü HA'da yok.",
-    net: "<b>Home Assistant'a ulaşılamıyor</b>Bağlantı gelince fotoğraflar kendiliğinden başlayacak."
-  }[k];
+  var t = T[k].replace("{s}", CONFIG.sensor);
   $msg.innerHTML = t; tglC($msg, "hide", false);
   for (var i = 0; i < layers.length; i++) tglC(layers[i], "on", false);
   cur = null;
@@ -212,7 +232,8 @@ var $clk = $(".clk"), $tm = $(".tm"), $dt = $(".dt");
 function tick() {
   var d = new Date(), h = d.getHours(), m = d.getMinutes();
   $tm.textContent = (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
-  $dt.textContent = d.getDate() + " " + MONTHS[d.getMonth()] + " " + DAYS[d.getDay()];
+  $dt.textContent = LANG === "tr" ? d.getDate() + " " + T.months[d.getMonth()] + " " + T.days[d.getDay()]
+    : T.days[d.getDay()] + ", " + T.months[d.getMonth()] + " " + d.getDate();
 }
 var clockOn = sget("cfClock") !== null ? sget("cfClock") === "1" : CONFIG.clock;
 function setClock(on) { clockOn = on; sset("cfClock", on ? "1" : "0"); tglC($clk, "off", !on); }
@@ -221,8 +242,7 @@ function setClock(on) { clockOn = on; sset("cfClock", on ? "1" : "0"); tglC($clk
 var $setup = $(".setup"), $sm = $(".setup .sm"), $ta = $(".setup textarea"), $save = $(".setup .save");
 function needToken(bad) {
   clearTimeout(timer);
-  $sm.textContent = bad ? "Token geçersiz ya da süresi dolmuş. Yeni bir token yapıştırın."
-    : "Home Assistant için bir long-lived access token gerekiyor (Profile → Security → Long-lived access tokens).";
+  $sm.textContent = bad ? T.badTok : T.setupT;
   tglC($sm, "err", !!bad); tglC($setup, "hide", false);
 }
 
@@ -245,7 +265,7 @@ var lp = 0, zc = $(".zc");
 zc.addEventListener("touchstart", function () { lp = setTimeout(function () { needToken(false); }, 2500); }, false);
 zc.addEventListener("touchend", function () { clearTimeout(lp); }, false);
 zc.addEventListener("touchmove", function () { clearTimeout(lp); }, false);
-$save.textContent = "Kaydet";
+$save.textContent = T.save;
 tap($save, function () {
   var v = $ta.value.replace(/\s+/g, ""); if (!v) return;
   sset("cfToken", v); TOKEN = v; $ta.value = ""; $ta.blur(); tglC($setup, "hide", true);

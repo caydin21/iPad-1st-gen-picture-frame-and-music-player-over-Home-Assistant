@@ -10,9 +10,9 @@
 // showing old copies. This tiny page may stay cached, but it always opens the real page under
 // a fresh URL, so updates show up immediately.
 //   index.html          -> home.html (clock · photos · music)
-//   index.html#music    -> music.html   (also #clock, #photos, #remote)
+//   index.html#music    -> music.html   (also #clock, #photos)
 var page = (location.hash || "").replace("#", "");
-if (!/^(home|clock|photos|music|remote)$/.test(page)) page = "home";
+if (!/^(home|clock|photos|music)$/.test(page)) page = "home";
 location.replace(page + ".html?v=" + new Date().getTime());
 </script>
 </head><body></body></html>

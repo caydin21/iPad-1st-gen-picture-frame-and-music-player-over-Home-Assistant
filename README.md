@@ -4,24 +4,23 @@ Turn a **first-generation iPad (iOS 5.1.1)** into a framed wall display for **Ho
 
 The original iPad can't run the Home Assistant app or modern dashboards. Its Safari is from 2012: no WebSockets, no `fetch`, no Promises, no flexbox. So every page here is plain HTML with **ES5 JavaScript only**. It talks to Home Assistant over the **REST API** and needs nothing installed on the iPad.
 
-> UI text is in Turkish. All strings are near the top of each file and are easy to change.
+> The UI is in **English** or **Turkish**. By default it follows the iPad's language; set `lang: "en"` or `lang: "tr"` in a page's `CONFIG` to force one. (The music player falls back to English for any language other than Turkish.)
 
 | Clock + weather, with status banners | Music (Music Assistant) |
 |---|---|
 | ![Clock](docs/home-clock.png) | ![Music](docs/music.png) |
-| **Photo frame** | **TV remote (stand-alone page)** |
-| ![Photos](docs/photos.png) | ![Remote](docs/remote.png) |
+| **Photo frame** | |
+| ![Photos](docs/photos.png) | |
 
 ## What's inside
 
 | File | What it does |
 |---|---|
 | `www/home.html` | The combined app. **Clock · Photos · Music**, switched by swiping. It jumps to the music screen when Music Assistant starts playing, and goes back a few minutes after the music stops. It shows robot-vacuum and washing-machine banners, and reloads itself when the files on the server change. |
-| `www/clock.html` | Flip clock: the cards fold over when the time changes. Turkish date, plus weather from a `weather.*` entity (current temperature, condition, today's high and low). |
+| `www/clock.html` | Flip clock: the cards fold over when the time changes. Date, plus weather from a `weather.*` entity (current temperature, condition, today's high and low). |
 | `www/photos.html` | Photo frame for `/config/www/photos`. It shows pictures in shuffled order, changing every 3 minutes with a cross-fade. Portrait photos are cropped to fill the screen; landscape photos are shown whole. Optional clock in the corner. |
 | `www/music.html` | Music Assistant player drawn as a turntable. The album cover is the record label and spins while music plays, and the tone arm moves across the record as the track progresses. It has transport, volume and seek controls, a library browser (playlists, albums, artists, radio, tracks, search and favourites), and can switch on the speaker's smart plug if it is off. |
-| `www/remote.html` | LG webOS TV remote: power, D-pad, volume and channel, app shortcuts, all sources, and Hue Sync. Works on its own; it is not part of the combined app. |
-| `www/index.html` | Launcher. Add **this** page to the home screen (see *Caching* below). `index.html#music`, `#clock`, `#photos` and `#remote` open a single page instead of the combined app. |
+| `www/index.html` | Launcher. Add **this** page to the home screen (see *Caching* below). `index.html#music`, `#clock` and `#photos` open a single page instead of the combined app. |
 | `homeassistant/configuration.yaml` | A `folder` sensor that lists the photos, and a `shell_command` that shrinks them. |
 | `homeassistant/automations.yaml` | Runs the shrinking script when new photos arrive. |
 | `homeassistant/shell/resize_photos.py` | Scales photos down to 1024 px and rotates them upright from their EXIF data. It uses the Pillow library that ships inside Home Assistant. |
@@ -29,7 +28,7 @@ The original iPad can't run the Home Assistant app or modern dashboards. Its Saf
 ## Setup
 
 1. **Copy the pages.** Put the contents of `www/` into `/config/www/` on your Home Assistant. Home Assistant serves that folder at `http://<ha>:8123/local/`. You can use the Samba share, the File editor add-on, or Studio Code Server.
-2. **Edit the `CONFIG` block** at the top of each page so it uses your entity IDs: speaker, plug, TV, vacuum and washer sensors, weather. Every option has a comment. Entities you don't have can be left empty.
+2. **Edit the `CONFIG` block** at the top of each page so it uses your entity IDs: speaker, plug, vacuum and washer sensors, weather. Every option has a comment. Entities you don't have can be left empty.
 3. **Token.** Create a long-lived access token: open your **Profile → Security → Long-lived access tokens**. Then either paste it into `token: ""` in the pages, or leave that empty and paste it once into the setup screen that appears on the iPad. The pages share it through `localStorage`.
    **Use a dedicated non-admin user for the token.** Files under `/local/` are served without login, so a token written into a file can be read by anyone who can reach your Home Assistant.
 4. **Photos (optional).**
@@ -54,7 +53,7 @@ The original iPad can't run the Home Assistant app or modern dashboards. Its Saf
 
 İlk nesil iPad'i (iOS 5.1.1) Home Assistant için çerçeveli bir duvar ekranına çeviren sayfalar. Ekranı kaydırarak çevirmeli saat ile hava durumu, fotoğraf çerçevesi ve pikap görünümlü Music Assistant çalar arasında geçilir. Robot süpürge ve çamaşır makinesi çalışırken hangi ekran açıksa üstünde durum şeridi belirir.
 
-Kurulum için `www/` klasörünü `/config/www/` içine kopyalayın. Ardından her dosyanın başındaki `CONFIG` bölümüne kendi entity ID'lerinizi yazın. iPad'de Safari ile `http://<HA-IP>:8123/local/index.html` adresini açıp ana ekrana ekleyin.
+Arayüz iPad'in diline göre Türkçe ya da İngilizce açılır. Kurulum için `www/` klasörünü `/config/www/` içine kopyalayın. Ardından her dosyanın başındaki `CONFIG` bölümüne kendi entity ID'lerinizi yazın. iPad'de Safari ile `http://<HA-IP>:8123/local/index.html` adresini açıp ana ekrana ekleyin.
 
 ## License
 

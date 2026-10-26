@@ -5,7 +5,7 @@
 <!--
   CleanFrame Flip Clock — iPad (1. nesil, iOS 5.1.1)  v1.1.0
   Klasik çevirmeli (flip) saat: saat ve dakika kartları değişirken ortadan katlanarak döner.
-  iPad'in kendi saatini kullanır; altında Home Assistant'tan hava durumu gösterir (bağlantı yoksa saat yine çalışır).
+  Uses the iPad's own clock; shows the weather from Home Assistant underneath (the clock keeps running without it).
 -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -69,11 +69,32 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#
 var VERSION = "1.1.0";
 var CONFIG = {
   token: "",
-  weather: "weather.home",   // boş bırakılırsa hava durumu gösterilmez
+  weather: "weather.home",   // leave empty to hide the weather
+  lang: "auto",              // "auto" | "tr" | "en"
   haUrl: ""
 };
-var DAYS = ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"];
-var MONTHS = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+
+// UI language: "auto" follows the iPad's language (Turkish if it is set to Turkish, otherwise English)
+var LANG = (CONFIG.lang === "tr" || CONFIG.lang === "en") ? CONFIG.lang : (/^tr/i.test(navigator.language || "") ? "tr" : "en");
+var L10N = {
+  tr: {
+    days: ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"],
+    months: ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"],
+    cond: { "clear-night": "Açık", cloudy: "Bulutlu", exceptional: "Olağanüstü", fog: "Sisli", hail: "Dolu",
+      lightning: "Şimşekli", "lightning-rainy": "Gök gürültülü sağanak", partlycloudy: "Parçalı bulutlu",
+      pouring: "Sağanak", rainy: "Yağmurlu", snowy: "Karlı", "snowy-rainy": "Karla karışık yağmur",
+      sunny: "Güneşli", windy: "Rüzgârlı", "windy-variant": "Rüzgârlı, bulutlu" }
+  },
+  en: {
+    days: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+    months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+    cond: { "clear-night": "Clear", cloudy: "Cloudy", exceptional: "Exceptional", fog: "Fog", hail: "Hail",
+      lightning: "Lightning", "lightning-rainy": "Thunderstorm", partlycloudy: "Partly cloudy",
+      pouring: "Pouring", rainy: "Rain", snowy: "Snow", "snowy-rainy": "Sleet",
+      sunny: "Sunny", windy: "Windy", "windy-variant": "Windy, cloudy" }
+  }
+};
+var T = L10N[LANG];
 
 var clock = document.getElementById("clock"), $date = document.querySelector(".date");
 var $sec = document.querySelector(".sec"), $seci = document.querySelector(".sec i");
@@ -155,7 +176,9 @@ function tick(animate) {
   var d = new Date(), h = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
   var t = (h < 10 ? "0" : "") + h + (m < 10 ? "0" : "") + m;
   for (var i = 0; i < 4; i++) set(cards[i], t.charAt(i), animate);
-  $date.textContent = d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear() + "  ·  " + DAYS[d.getDay()];
+  $date.textContent = LANG === "tr"
+    ? d.getDate() + " " + T.months[d.getMonth()] + " " + d.getFullYear() + "  ·  " + T.days[d.getDay()]
+    : T.days[d.getDay()] + "  ·  " + T.months[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear();
   // a thin bar that fills up over the minute
   $seci.style.width = Math.round(S_TW * (s + 1) / 60) + "px";
   if (s === 59) setTimeout(function () { $seci.style.webkitTransition = "none"; $seci.style.width = "0"; void $seci.offsetWidth; $seci.style.webkitTransition = ""; }, 950);
@@ -163,12 +186,7 @@ function tick(animate) {
 
 /* ---------------- weather (Home Assistant) ---------------- */
 var $wx = document.querySelector(".wx"), WX_ICON = 30, WX = { st: null, hi: null, lo: null };
-var COND = {
-  "clear-night": "Açık", cloudy: "Bulutlu", exceptional: "Olağanüstü", fog: "Sisli", hail: "Dolu",
-  lightning: "Şimşekli", "lightning-rainy": "Gök gürültülü sağanak", partlycloudy: "Parçalı bulutlu",
-  pouring: "Sağanak", rainy: "Yağmurlu", snowy: "Karlı", "snowy-rainy": "Karla karışık yağmur",
-  sunny: "Güneşli", windy: "Rüzgârlı", "windy-variant": "Rüzgârlı, bulutlu"
-};
+var COND = T.cond;
 var CLOUD = '<path d="M7 18h10a4 4 0 0 0 .6-7.96A5.5 5.5 0 0 0 7.1 9.6 4.2 4.2 0 0 0 7 18z"/>';
 var ICON = {
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
