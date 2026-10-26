@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<!--
+  CleanFrame Photo Frame — iPad (1. nesil, iOS 5.1.1)  v1.2.0
+  HA'daki www/photos klasöründeki fotoğrafları isim sırasıyla gösterir (varsayılan: 3 dakikada bir).
+  Dosya listesi "folder" sensöründen (sensor.photos) okunur. Sadece ES5 + HA REST API.
+  Dokunma: sol kenar = önceki, sağ kenar = sonraki, orta = saati göster/gizle. Başlığa (saate) 2,5 sn basılı tutmak = token ekranı.
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>Çerçeve</title>
+<style>
+html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#fff;
+ font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;-webkit-text-size-adjust:none;
+ -webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:rgba(0,0,0,0)}
+.hide{display:none!important}
+.ph{position:absolute;top:0;left:0;right:0;bottom:0;background-color:#000;background-repeat:no-repeat;background-position:center;
+ -webkit-background-size:contain;background-size:contain;opacity:0;-webkit-transition:opacity 2s ease-in-out;-webkit-transform:translate3d(0,0,0)}
+.ph.fill{-webkit-background-size:cover;background-size:cover}
+.ph.on{opacity:1}
+.clk{position:absolute;left:36px;bottom:30px;text-shadow:0 2px 12px rgba(0,0,0,.7),0 0 2px rgba(0,0,0,.6);-webkit-transition:opacity .6s}
+.clk .tm{font-family:"HelveticaNeue-UltraLight","HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif;font-weight:200;font-size:96px;line-height:96px;letter-spacing:-2px}
+.clk .dt{font-family:"HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif;font-size:24px;line-height:32px;opacity:.9;margin-left:4px}
+.clk.off{opacity:0}
+.msg{position:absolute;left:50%;top:50%;width:560px;margin-left:-280px;margin-top:-80px;text-align:center;color:#a9b3b8;font-size:19px;line-height:28px}
+.msg b{display:block;color:#e8ecee;font-size:26px;line-height:36px;font-weight:normal;margin-bottom:10px}
+.msg code{font-family:Menlo,Courier,monospace;color:#8aaecf;font-size:17px}
+.zone{position:absolute;top:0;bottom:0}
+.zl{left:0;width:22%}.zr{right:0;width:22%}.zc{left:22%;right:22%}
+.setup{position:absolute;top:0;left:0;right:0;bottom:0;background:#0c0f10;padding:40px;color:#e8ecee}
+.setup h1{font-weight:normal;font-size:28px;margin:0 0 12px}
+.setup p{font-size:17px;line-height:25px;color:#a9b3b8;margin:0 0 16px}
+.setup .err{color:#ff8a80}
+.setup textarea{display:block;width:100%;height:150px;box-sizing:border-box;-webkit-box-sizing:border-box;border-radius:14px;
+ border:1px solid rgba(232,236,238,.18);background:#151a1c;color:#e8ecee;font-size:15px;padding:14px;font-family:Menlo,Courier,monospace;-webkit-appearance:none;outline:none;-webkit-user-select:text}
+.setup .save{display:inline-block;margin-top:18px;height:52px;line-height:52px;padding:0 34px;border-radius:26px;background:#8aaecf;color:#10161a;font-size:19px}
+</style>
+</head>
+<body>
+<div class="ph" id="a"></div>
+<div class="ph" id="b"></div>
+<div class="msg hide"></div>
+<div class="clk"><div class="tm"></div><div class="dt"></div></div>
+<div class="zone zl"></div><div class="zone zc"></div><div class="zone zr"></div>
+<div class="setup hide">
+ <h1>Çerçeve</h1><p class="sm"></p>
+ <textarea autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+ <div class="save"></div>
+</div>
+<script>
+(function () {
+"use strict";
+
+/* ======================= AYARLAR ======================= */
+var CONFIG = {
+  token: "",
+  sensor: "sensor.photos",          // folder sensörü (www/photos klasörünü izler)
+  interval: 180,                    // saniye: 3 dakika
+  shuffle: true,                    // true = rastgele sıra (her fotoğraf bir tur içinde bir kez), false = isim sırası
+  fill: false,                      // true = tüm fotoğraflar ekranı doldurur (kenarlar kırpılır), false = fotoğrafın tamamı görünür
+  fillPortrait: true,               // dikey fotoğraflar her zaman ekranı doldurur (siyah bant kalmaz)
+  clock: true,                      // köşede saat/tarih
+  haUrl: ""
+};
+/* ======================================================= */
+
+var VERSION = "1.2.0";
+var DAYS = ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"];
+var MONTHS = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+
+function $(s) { return document.querySelector(s); }
+function hasC(el, c) { return (" " + el.className + " ").indexOf(" " + c + " ") > -1; }
+function tglC(el, c, on) {
+  var h = hasC(el, c);
+  if (on && !h) el.className = (el.className ? el.className + " " : "") + c;
+  else if (!on && h) el.className = (" " + el.className + " ").replace(" " + c + " ", " ").replace(/^\s+|\s+$/g, "");
+}
+function sget(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+function sset(k, v) { try { if (v == null) window.localStorage.removeItem(k); else window.localStorage.setItem(k, v); } catch (e) { /* */ } }
+function ms() { return new Date().getTime(); }
+
+var BASE = String(CONFIG.haUrl || "").replace(/\/+$/, "");
+var TOKEN = sget("cfToken") || String(CONFIG.token || "").replace(/\s+/g, "");
+function api(path, cb) {
+  var x = new XMLHttpRequest(), done = false;
+  var to = setTimeout(function () { if (done) return; done = true; try { x.abort(); } catch (e) { /* */ } cb({ status: 0 }); }, 12000);
+  x.onreadystatechange = function () {
+    if (x.readyState !== 4 || done) return;
+    done = true; clearTimeout(to);
+    if (x.status >= 200 && x.status < 300) { var j = null; try { j = JSON.parse(x.responseText); } catch (e) { /* */ } cb(null, j); }
+    else cb({ status: x.status });
+  };
+  x.open("GET", BASE + path + (path.indexOf("?") < 0 ? "?" : "&") + "_=" + ms(), true);
+  x.setRequestHeader("Authorization", "Bearer " + TOKEN);
+  x.send(null);
+}
+
+/* ---------------- photo list ---------------- */
+var list = [], idx = -1, cur = null, layers = [$("#a"), $("#b")], front = 0, timer = 0, $msg = $(".msg");
+var IMG = /\.(jpe?g|png|gif)$/i;
+// /config/www/photos/x.jpg → /local/photos/x.jpg
+function toUrl(p) {
+  var m = /\/www\/(.+)$/.exec(p); if (!m) return null;
+  var parts = m[1].split("/"), out = [];
+  for (var i = 0; i < parts.length; i++) out.push(encodeURIComponent(parts[i]));
+  return BASE + "/local/" + out.join("/");
+}
+function base(p) { return p.substring(p.lastIndexOf("/") + 1); }
+function loadList(cb) {
+  api("/api/states/" + CONFIG.sensor, function (e, j) {
+    if (e) {
+      if (e.status === 401) { needToken(true); return; }
+      if (e.status === 404) note("noSensor");
+      else if (!list.length) note("net");
+      if (cb) cb(); return;
+    }
+    var files = (j && j.attributes && j.attributes.file_list) || [], out = [], i;
+    for (i = 0; i < files.length; i++) {
+      var n = base(files[i]);
+      if (n.charAt(0) === "." || !IMG.test(n)) continue;   // skip ._ files Macs leave on Samba shares
+      var u = toUrl(files[i]); if (u) out.push({ n: n, u: u });
+    }
+    out.sort(function (a, b) { var x = a.n.toLowerCase(), y = b.n.toLowerCase(); return x < y ? -1 : (x > y ? 1 : 0); });
+    list = CONFIG.shuffle ? shuffled(out) : out;
+    if (!list.length) note("empty"); else tglC($msg, "hide", true);
+    if (cb) cb();
+  });
+}
+function note(k) {
+  var t = {
+    empty: "<b>Henüz fotoğraf yok</b>Fotoğrafları HA'daki <code>www/photos</code> klasörüne atın<br>(Samba share: <code>config/www/photos</code>). En geç bir dakikada görünürler.",
+    noSensor: "<b>Fotoğraf listesi bulunamadı</b><code>" + CONFIG.sensor + "</code> sensörü HA'da yok.",
+    net: "<b>Home Assistant'a ulaşılamıyor</b>Bağlantı gelince fotoğraflar kendiliğinden başlayacak."
+  }[k];
+  $msg.innerHTML = t; tglC($msg, "hide", false);
+  for (var i = 0; i < layers.length; i++) tglC(layers[i], "on", false);
+  cur = null;
+}
+
+/* ---------------- random order ----------------
+   The order is kept in localStorage, so a reload or a newly added photo doesn't restart the round.
+   New photos are slotted in at a random spot among the ones not shown yet. */
+function rnd(n) { return Math.floor(Math.random() * n); }
+function mix(a) { for (var i = a.length - 1; i > 0; i--) { var j = rnd(i + 1), t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+function saveOrder(arr) { var n = []; for (var i = 0; i < arr.length; i++) n.push(arr[i].n); sset("cfOrder", JSON.stringify(n)); }
+function shuffled(items) {
+  var byName = {}, i, saved = [], out = [], fresh = [];
+  for (i = 0; i < items.length; i++) byName[items[i].n] = items[i];
+  try { saved = JSON.parse(sget("cfOrder") || "[]") || []; } catch (e) { saved = []; }
+  for (i = 0; i < saved.length; i++) if (byName[saved[i]]) { out.push(byName[saved[i]]); byName[saved[i]] = null; }
+  for (i = 0; i < items.length; i++) if (byName[items[i].n]) fresh.push(items[i]);
+  if (!out.length) out = mix(fresh);
+  else {
+    var at = 0, last = sget("cfPhoto");
+    for (i = 0; i < out.length; i++) if (out[i].n === last) { at = i + 1; break; }
+    for (i = 0; i < fresh.length; i++) out.splice(at + rnd(out.length - at + 1), 0, fresh[i]);
+  }
+  saveOrder(out);
+  return out;
+}
+function reshuffle(arr, avoid) {
+  var a = mix(arr.slice(0));
+  if (a.length > 1 && a[0].n === avoid) { var t = a[0]; a[0] = a[a.length - 1]; a[a.length - 1] = t; }
+  saveOrder(a);
+  return a;
+}
+
+/* ---------------- slideshow ---------------- */
+function show(step) {
+  clearTimeout(timer);
+  if (!list.length) { timer = setTimeout(function () { loadList(function () { show(0); }); }, 60000); return; }
+  // keep our place by file name, so adding/removing photos doesn't restart the show
+  var last = sget("cfPhoto"), i;
+  if (idx < 0) { idx = 0; if (last) for (i = 0; i < list.length; i++) if (list[i].n === last) { idx = i; break; } }
+  else if (cur) { for (i = 0; i < list.length; i++) if (list[i].n === cur) { idx = i; break; } }
+  var nidx = ((idx + step) % list.length + list.length) % list.length;
+  // a full round is done: deal a new random order (not starting with the photo just shown)
+  if (CONFIG.shuffle && step > 0 && nidx < idx && list.length > 2) { list = reshuffle(list, cur); nidx = 0; }
+  idx = nidx;
+  var it = list[idx], im = new Image(), done = false;
+  function next() { timer = setTimeout(function () { loadList(function () { show(1); }); }, CONFIG.interval * 1000); }
+  var to = setTimeout(function () { if (done) return; done = true; im.onload = im.onerror = null; skip(); }, 30000);
+  function skip() { if (list.length > 1) { timer = setTimeout(function () { show(1); }, 1500); } else next(); }
+  im.onload = function () {
+    if (done) return; done = true; clearTimeout(to);
+    var back = layers[1 - front];
+    back.style.backgroundImage = 'url("' + it.u.replace(/"/g, "%22") + '")';
+    // portrait photos fill the screen (no black bars); landscape ones are shown whole
+    var portrait = (im.naturalHeight || im.height) > (im.naturalWidth || im.width);
+    var fill = !!CONFIG.fill || (portrait && CONFIG.fillPortrait);
+    tglC(back, "fill", fill);
+    back.style.backgroundPosition = fill && portrait ? "50% 35%" : "center";   // keep heads in view
+    // let the new layer paint before fading it in
+    setTimeout(function () {
+      tglC(back, "on", true); tglC(layers[front], "on", false); front = 1 - front;
+      // free the old picture once it has faded out (iPad 1 has little memory)
+      var old = layers[1 - front];
+      setTimeout(function () { if (!hasC(old, "on")) old.style.backgroundImage = "none"; }, 2300);
+    }, 60);
+    cur = it.n; sset("cfPhoto", it.n);
+    next();
+  };
+  im.onerror = function () { if (done) return; done = true; clearTimeout(to); skip(); };
+  im.src = it.u;
+}
+
+/* ---------------- clock ---------------- */
+var $clk = $(".clk"), $tm = $(".tm"), $dt = $(".dt");
+function tick() {
+  var d = new Date(), h = d.getHours(), m = d.getMinutes();
+  $tm.textContent = (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+  $dt.textContent = d.getDate() + " " + MONTHS[d.getMonth()] + " " + DAYS[d.getDay()];
+}
+var clockOn = sget("cfClock") !== null ? sget("cfClock") === "1" : CONFIG.clock;
+function setClock(on) { clockOn = on; sset("cfClock", on ? "1" : "0"); tglC($clk, "off", !on); }
+
+/* ---------------- token ---------------- */
+var $setup = $(".setup"), $sm = $(".setup .sm"), $ta = $(".setup textarea"), $save = $(".setup .save");
+function needToken(bad) {
+  clearTimeout(timer);
+  $sm.textContent = bad ? "Token geçersiz ya da süresi dolmuş. Yeni bir token yapıştırın."
+    : "Home Assistant için bir long-lived access token gerekiyor (Profile → Security → Long-lived access tokens).";
+  tglC($sm, "err", !!bad); tglC($setup, "hide", false);
+}
+
+/* ---------------- touch ---------------- */
+function tap(el, fn) {
+  var last = 0, sx = 0, sy = 0;
+  el.addEventListener("touchstart", function (e) { var t = e.touches[0]; sx = t.clientX; sy = t.clientY; }, false);
+  el.addEventListener("touchend", function (e) {
+    e.preventDefault(); last = ms();
+    var t = e.changedTouches[0];
+    if (Math.abs(t.clientX - sx) > 15 || Math.abs(t.clientY - sy) > 15) return;   // a swipe, not a tap
+    fn();
+  }, false);
+  el.addEventListener("click", function () { if (ms() - last > 800) fn(); }, false);
+}
+tap($(".zl"), function () { show(-1); });
+tap($(".zr"), function () { show(1); });
+tap($(".zc"), function () { setClock(!clockOn); });
+var lp = 0, zc = $(".zc");
+zc.addEventListener("touchstart", function () { lp = setTimeout(function () { needToken(false); }, 2500); }, false);
+zc.addEventListener("touchend", function () { clearTimeout(lp); }, false);
+zc.addEventListener("touchmove", function () { clearTimeout(lp); }, false);
+$save.textContent = "Kaydet";
+tap($save, function () {
+  var v = $ta.value.replace(/\s+/g, ""); if (!v) return;
+  sset("cfToken", v); TOKEN = v; $ta.value = ""; $ta.blur(); tglC($setup, "hide", true);
+  loadList(function () { show(0); });
+});
+document.addEventListener("touchmove", function (e) { if (!e.target || e.target.tagName !== "TEXTAREA") e.preventDefault(); }, false);
+
+/* ---------------- start ---------------- */
+setClock(clockOn); tick(); setInterval(tick, 10000);
+if (!TOKEN) needToken(false);
+else loadList(function () { show(0); });
+if (window.console) console.log("CleanFrame Photo Frame v" + VERSION);
+})();
+</script>
+</body>
+</html>

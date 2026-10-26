@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>CleanFrame</title>
+<style>html,body{margin:0;height:100%;background:#000}</style>
+<script>
+// Launcher. Home Assistant serves /local files with a 31-day browser cache, so an iPad keeps
+// showing old copies. This tiny page may stay cached, but it always opens the real page under
+// a fresh URL, so updates show up immediately.
+//   index.html          -> home.html (clock · photos · music)
+//   index.html#music    -> music.html   (also #clock, #photos, #remote)
+var page = (location.hash || "").replace("#", "");
+if (!/^(home|clock|photos|music|remote)$/.test(page)) page = "home";
+location.replace(page + ".html?v=" + new Date().getTime());
+</script>
+</head><body></body></html>

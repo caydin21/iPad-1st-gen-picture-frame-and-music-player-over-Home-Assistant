@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<!--
+  CleanFrame Music — iPad (1. nesil, iOS 5.1.1) sürümü  v1.0.0
+  CleanFrame Music Card'ın eski Safari'de çalışan tek dosyalık kopyası.
+  Sadece ES5 + HA REST API kullanır (websocket, Promise, fetch, flexbox-gap vs. yok).
+
+  Kurulum:
+    1) Bu dosyayı /config/www/ klasörüne koyun (tahmin edilmesi zor bir isimle, örn. music.html).
+    2) Aşağıdaki CONFIG'i doldurun (en azından token).
+    3) iPad'de Safari ile açın:  http://<HA-IP>:8123/local/<dosya-adı>.html
+       Sonra "Ana Ekrana Ekle" → tam ekran açılır.
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="format-detection" content="telephone=no">
+<title>CleanFrame Music</title>
+<style>
+html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#e8ecee;
+ font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;-webkit-text-size-adjust:none;
+ -webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:rgba(0,0,0,0)}
+svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.hide{display:none!important}
+#card{position:absolute;top:12px;left:12px;right:12px;bottom:12px;overflow:hidden;border-radius:26px;
+ border:1px solid rgba(255,255,255,.09);
+ background:#111517;background:-webkit-linear-gradient(top,#171c1e,#0c0f10)}
+.player{position:absolute;top:0;left:0;right:0;bottom:0;padding:0 30px}
+
+/* turntable */
+.flow{position:relative;overflow:hidden}
+.tt{position:absolute;left:50%;top:50%;border-radius:10px;
+ -webkit-box-shadow:0 18px 40px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.18);box-shadow:0 18px 40px rgba(0,0,0,.6)}
+.tt .gl{position:absolute;top:0;left:0;right:0;bottom:0;border-radius:10px;
+ background:-webkit-linear-gradient(top left,rgba(255,255,255,.10),rgba(255,255,255,0) 45%,rgba(0,0,0,.18))}
+.pl{position:absolute;border-radius:50%;background:#1b1d1e;
+ -webkit-box-shadow:0 6px 18px rgba(0,0,0,.55),inset 0 0 0 1px rgba(255,255,255,.06)}
+.rec{position:absolute;top:0;left:0;right:0;bottom:0;border-radius:50%;
+ background-position:center;-webkit-background-size:100% 100%;background-size:100% 100%;
+ -webkit-animation:spin 1.8s linear infinite;-webkit-animation-play-state:paused;-webkit-transform:translate3d(0,0,0)}
+.rec.on{-webkit-animation-play-state:running}
+@-webkit-keyframes spin{from{-webkit-transform:rotate(0deg)}to{-webkit-transform:rotate(360deg)}}
+.lab{position:absolute;border-radius:50%;overflow:hidden;background:#3a4246}
+.lab div{position:absolute;top:0;left:0;right:0;bottom:0;border-radius:50%;
+ background-position:center;-webkit-background-size:cover;background-size:cover;-webkit-transition:opacity .8s}
+.lab .ph{color:#e8ecee;opacity:.4}
+.lab .ph svg{position:absolute;left:30%;top:30%;width:40%;height:40%;stroke-width:1.4}
+.sheen{position:absolute;top:0;left:0;right:0;bottom:0;border-radius:50%;pointer-events:none}
+.spin{position:absolute;border-radius:50%;background:#cfd4d6;-webkit-box-shadow:0 0 0 2px rgba(0,0,0,.35)}
+.arm{position:absolute;top:0;left:0;-webkit-transition:-webkit-transform 1.4s cubic-bezier(.45,.05,.25,1);pointer-events:none}
+.arm svg{position:absolute;top:0;left:0;stroke:none;fill:none}
+.knob{position:absolute;border-radius:50%;background:#d9dcdd;
+ background:-webkit-radial-gradient(35% 30%,circle,#fafafa,#b9bec0 70%);-webkit-box-shadow:0 2px 4px rgba(0,0,0,.4)}
+
+/* text */
+.meta{text-align:center;padding-top:10px;height:78px}
+.t{font-family:"HelveticaNeue-Medium","Helvetica Neue",Helvetica,Arial,sans-serif;font-size:32px;line-height:40px;
+ white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.a{font-size:19px;line-height:28px;color:#a9b3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta.peek .t{color:#8aaecf}
+.diag{font-size:13px;line-height:18px;color:#ffb74d;text-align:center;height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* progress */
+.pgw{display:-webkit-box;-webkit-box-align:center;margin:8px 7% 0;height:30px;font-size:15px;color:#a9b3b8}
+.pgw span{display:block;width:52px}
+.pgw .p2{text-align:right}
+.pg{display:block;-webkit-box-flex:1;height:30px;position:relative;margin:0 12px}
+.pg b,.vl b{position:absolute;left:0;right:0;top:12px;height:6px;border-radius:3px;background:rgba(232,236,238,.18);overflow:hidden}
+.pg i,.vl i{display:block;height:6px;width:0;background:#8aaecf;border-radius:3px}
+.pg i{-webkit-transition:width .9s linear}
+.vl i{-webkit-transition:width .2s}
+
+/* transport */
+.bt{text-align:center;margin-top:12px;height:84px;font-size:0;white-space:nowrap}
+.b{display:inline-block;vertical-align:middle;width:58px;height:58px;border-radius:29px;margin:0 16px;
+ position:relative;color:#e8ecee;opacity:.85}
+.b svg{position:absolute;left:16px;top:16px;width:26px;height:26px}
+.b.pp{width:84px;height:84px;border-radius:42px;background:#8aaecf;color:#10161a;opacity:1}
+.b.pp svg{left:24px;top:24px;width:36px;height:36px}
+.b.act{opacity:1;color:#8aaecf}
+.b.down{background:rgba(232,236,238,.12);-webkit-transform:scale(.92)}
+.b.pp.down{background:#7697b6}
+
+/* bottom row */
+.row{display:-webkit-box;-webkit-box-align:center;margin-top:18px;height:56px}
+.sc{display:block;-webkit-box-flex:1;width:0;font-size:17px;color:#a9b3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot{display:inline-block;width:12px;height:12px;border-radius:6px;background:#66bb6a;margin-right:10px;vertical-align:0}
+.dot.off{background:#7a8287}
+.dot.wait{background:#ffa600;-webkit-animation:cfp 1.2s infinite}
+.dot.err{background:#e53935}
+@-webkit-keyframes cfp{50%{opacity:.3}}
+.vol{display:-webkit-box;-webkit-box-align:center;width:300px;margin:0 16px}
+.vb{display:block;width:56px;height:44px;border-radius:22px;background:rgba(232,236,238,.08);font-size:28px;line-height:42px;text-align:center}
+.vb.down,.libb.down{background:rgba(232,236,238,.2)}
+.vl{display:block;-webkit-box-flex:1;height:44px;position:relative;margin:0 12px}
+.vl b{top:19px}
+.rb{display:block;-webkit-box-flex:1;width:0;text-align:right}
+.narrow .row{display:block;height:auto;position:relative}
+.narrow .sc{width:60%;line-height:48px}
+.narrow .rb{position:absolute;right:0;top:0;width:auto}
+.narrow .vol{width:auto;margin:0 40px;padding-top:16px}
+.libb{display:inline-block;height:48px;line-height:48px;padding:0 24px;border-radius:24px;background:rgba(232,236,238,.08);font-size:19px;white-space:nowrap}
+
+/* library */
+.lib{position:absolute;top:0;left:0;right:0;bottom:0;background:#0f1314;background:-webkit-linear-gradient(top,#151a1c,#0c0f10)}
+.lh{position:absolute;top:16px;left:20px;right:20px;height:52px}
+.lh .x{position:absolute;right:0;top:2px;width:48px;height:48px;border-radius:24px;background:rgba(232,236,238,.08);font-size:22px;line-height:48px;text-align:center}
+.lh .lt{position:absolute;left:60px;right:60px;top:0;text-align:center;font-family:"HelveticaNeue-Medium","Helvetica Neue",Helvetica,Arial,sans-serif;font-size:24px;line-height:52px}
+.tabs{position:absolute;top:80px;left:20px;right:20px;height:44px;white-space:nowrap;overflow:hidden;text-align:center;font-size:0}
+.tab{display:inline-block;height:42px;line-height:42px;padding:0 18px;margin:0 4px;border-radius:21px;font-size:17px;color:#c9d1d5;
+ background:rgba(232,236,238,.06);border:1px solid rgba(232,236,238,.08)}
+.tab.on{background:#8aaecf;color:#10161a;border-color:#8aaecf}
+.tab.down{background:rgba(232,236,238,.18)}
+.srow{position:absolute;top:136px;left:20px;right:20px;height:44px}
+.srow input{position:absolute;left:0;right:150px;top:0;height:44px;box-sizing:border-box;-webkit-box-sizing:border-box;
+ border:1px solid rgba(232,236,238,.14);border-radius:22px;background:rgba(232,236,238,.06);color:#e8ecee;
+ font-size:17px;padding:0 18px;-webkit-appearance:none;outline:none;font-family:inherit;-webkit-user-select:text}
+.srow .fav{position:absolute;right:0;top:0;width:136px;height:42px;line-height:42px;text-align:center;border-radius:21px;font-size:17px;
+ color:#c9d1d5;background:rgba(232,236,238,.06);border:1px solid rgba(232,236,238,.08)}
+.srow .fav.on{color:#10161a;background:#ffcc66;border-color:#ffcc66}
+.ll{position:absolute;top:196px;left:12px;right:12px;bottom:12px;overflow-x:hidden;overflow-y:scroll;-webkit-overflow-scrolling:touch}
+.bi{position:relative;height:68px;margin:0 8px 4px;border-radius:14px;-webkit-transform:translate3d(0,0,0)}
+.ll .more,.ll .bn{-webkit-transform:translate3d(0,0,0)}
+.bi.down{background:rgba(232,236,238,.1)}
+.th{position:absolute;left:10px;top:8px;width:52px;height:52px;border-radius:8px;background:rgba(232,236,238,.08);overflow:hidden;
+ background-position:center;-webkit-background-size:cover;background-size:cover}
+.th svg{position:absolute;left:14px;top:14px;width:24px;height:24px;opacity:.5}
+.th.has svg{display:none}
+.bx{position:absolute;left:78px;right:16px;top:12px}
+.bx div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bx .n{font-size:18px;line-height:24px}
+.bx .s{font-size:14px;line-height:20px;color:#98a3a8}
+.bi.single .bx{top:22px}
+.bn{padding:40px 20px;text-align:center;color:#98a3a8;font-size:18px}
+.more{height:56px;line-height:56px;text-align:center;color:#8aaecf;font-size:18px;margin:6px 8px 16px;border-radius:14px;background:rgba(232,236,238,.05)}
+.more.down{background:rgba(232,236,238,.12)}
+
+/* setup */
+.setup{position:absolute;top:0;left:0;right:0;bottom:0;background:#0c0f10;padding:40px}
+.setup h1{font-family:"HelveticaNeue-Medium","Helvetica Neue",Helvetica,Arial,sans-serif;font-weight:normal;font-size:28px;margin:0 0 12px}
+.setup p{font-size:17px;line-height:25px;color:#a9b3b8;margin:0 0 16px}
+.setup .err{color:#ff8a80}
+.setup textarea{display:block;width:100%;height:150px;box-sizing:border-box;-webkit-box-sizing:border-box;border-radius:14px;
+ border:1px solid rgba(232,236,238,.18);background:#151a1c;color:#e8ecee;font-size:15px;padding:14px;font-family:Menlo,Courier,monospace;
+ -webkit-appearance:none;outline:none;-webkit-user-select:text}
+.setup .save{display:inline-block;margin-top:18px;height:52px;line-height:52px;padding:0 34px;border-radius:26px;background:#8aaecf;color:#10161a;font-size:19px}
+.setup .save.down{background:#7697b6}
+</style>
+</head>
+<body>
+<div id="card">
+ <div class="player">
+  <div class="flow"></div>
+  <div class="meta"><div class="t">&nbsp;</div><div class="a">&nbsp;</div><div class="diag"></div></div>
+  <div class="pgw"><span class="p1"></span><div class="pg"><b><i></i></b></div><span class="p2"></span></div>
+  <div class="bt">
+   <div class="b" data-a="shuf"></div><div class="b" data-a="prev"></div><div class="b pp" data-a="pp"></div><div class="b" data-a="next"></div><div class="b" data-a="rep"></div>
+  </div>
+  <div class="row">
+   <div class="sc"><i class="dot off"></i><span></span></div>
+   <div class="vol"><div class="vb" data-v="-1">&#8722;</div><div class="vl"><b><i></i></b></div><div class="vb" data-v="1">+</div></div>
+   <div class="rb"><div class="libb"></div></div>
+  </div>
+ </div>
+ <div class="lib hide">
+  <div class="lh"><div class="lt"></div><div class="x">&#10005;</div></div>
+  <div class="tabs"></div>
+  <div class="srow"><input type="search" autocorrect="off" autocapitalize="off"><div class="fav"></div></div>
+  <div class="ll"></div>
+ </div>
+ <div class="setup hide">
+  <h1>CleanFrame Music</h1>
+  <p class="msg"></p>
+  <textarea autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+  <div class="save"></div>
+ </div>
+</div>
+<script>
+(function () {
+"use strict";
+
+/* ======================= AYARLAR ======================= */
+var CONFIG = {
+  token: "", // HA long-lived access token (Profile → Security → Long-lived access tokens)
+  entity: "media_player.living_room_speaker", // Music Assistant oynatıcısı
+  power: "switch.speaker_plug",          // hoparlörün prizi (boş bırakılabilir)
+  maUrl: "http://homeassistant.local:8095",     // Music Assistant adresi (kapak görselleri için)
+  maEntry: "",                            // Music Assistant config_entry_id (boşsa otomatik bulunmaya çalışılır)
+  nextCover: "",                          // (pikap görünümünde kullanılmıyor)
+  deckColor: "#9e2420",                   // pikap gövdesinin rengi
+  name: "",                               // görünen ad (boşsa friendly_name)
+  lang: "auto",                           // "auto" | "tr" | "en"
+  haUrl: ""                               // boş = sayfayı sunan HA (önerilen)
+};
+/* ======================================================= */
+
+var VERSION = "1.0.0";
+
+var L10N = {
+  tr: {
+    nothing: "Çalan bir şey yok", idle: "Kitaplıktan bir şey çalmaya başlayın", noEntity: "Oynatıcı bulunamadı",
+    playingOn: function (n) { return n + " üzerinden çalıyor"; }, readyOn: function (n) { return n + " hazır"; },
+    offOn: function (n) { return n + " kapalı"; },
+    spkOn: "Hoparlör açılıyor…", spkFail: "Hoparlöre bağlanılamadı",
+    lib: "Kitaplık", loading: "Yükleniyor…", empty: "Bir şey bulunamadı", libErr: "Kitaplık açılamadı",
+    more: "Daha fazla", fav: "★ Favoriler", search: "Ara…", playErr: "Çalınamadı",
+    tabs: { playlist: "Listeler", album: "Albümler", artist: "Sanatçılar", radio: "Radyo", track: "Parçalar" },
+    noEntry: "Music Assistant config_entry_id bulunamadı. Dosyadaki CONFIG.maEntry alanını doldurun.",
+    net: "Home Assistant'a ulaşılamıyor", noQueue: "Music Assistant kuyruğu alınamadı",
+    setupT: "Home Assistant'a bağlanmak için bir long-lived access token gerekiyor. Bilgisayarınızda HA → Profile → Security → Long-lived access tokens bölümünden oluşturup aşağıya yapıştırın.",
+    badTok: "Token geçersiz ya da süresi dolmuş. Yeni bir token yapıştırın.",
+    save: "Kaydet"
+  },
+  en: {
+    nothing: "Nothing is playing", idle: "Start something from the Library", noEntity: "Player not found",
+    playingOn: function (n) { return "Playing on " + n; }, readyOn: function (n) { return n + " ready"; },
+    offOn: function (n) { return n + " is off"; },
+    spkOn: "Turning on the speaker…", spkFail: "Could not reach the speaker",
+    lib: "Library", loading: "Loading…", empty: "Nothing found", libErr: "Could not open the library",
+    more: "Load more", fav: "★ Favorites", search: "Search…", playErr: "Could not play",
+    tabs: { playlist: "Playlists", album: "Albums", artist: "Artists", radio: "Radio", track: "Tracks" },
+    noEntry: "Music Assistant config_entry_id not found. Fill in CONFIG.maEntry in the file.",
+    net: "Can't reach Home Assistant", noQueue: "Could not get the Music Assistant queue",
+    setupT: "A long-lived access token is needed to connect to Home Assistant. Create one on your computer under HA → Profile → Security → Long-lived access tokens and paste it below.",
+    badTok: "The token is invalid or expired. Paste a new one.",
+    save: "Save"
+  }
+};
+var LANG = (CONFIG.lang === "tr" || CONFIG.lang === "en") ? CONFIG.lang : (/^tr/i.test(navigator.language || "") ? "tr" : "en");
+var L = L10N[LANG];
+
+var IC = {
+  shuf: '<svg viewBox="0 0 24 24"><path d="M3 7h3.5c5 0 5 10 10.5 10H20M3 17h3.5c1.8 0 3-.8 4-2M14 8.5c.9-1 1.9-1.5 3.5-1.5H20M17.5 4l3 3-3 3M17.5 14l3 3-3 3"/></svg>',
+  prev: '<svg viewBox="0 0 24 24"><path d="M18 5v14l-9-7z" style="fill:currentColor"/><path d="M6 5v14"/></svg>',
+  play: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" style="fill:currentColor"/></svg>',
+  pause: '<svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" style="stroke-width:3.4"/></svg>',
+  next: '<svg viewBox="0 0 24 24"><path d="M6 5v14l9-7z" style="fill:currentColor"/><path d="M18 5v14"/></svg>',
+  rep: '<svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3"/></svg>',
+  rep1: '<svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3M11 10.5l1.5-1v5"/></svg>',
+  note: '<svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>',
+  folder: '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'
+};
+
+var TABS = ["playlist", "album", "artist", "radio", "track"];
+
+/* ---------------- small helpers (ES5 / iOS 5 safe) ---------------- */
+function $(s, r) { return (r || document).querySelector(s); }
+function $$(s, r) { return (r || document).querySelectorAll(s); }
+function hasC(el, c) { return (" " + el.className + " ").indexOf(" " + c + " ") > -1; }
+function tglC(el, c, on) {
+  var h = hasC(el, c);
+  if (on && !h) el.className = (el.className ? el.className + " " : "") + c;
+  else if (!on && h) el.className = (" " + el.className + " ").replace(" " + c + " ", " ").replace(/^\s+|\s+$/g, "");
+}
+function closest(el, cls, stop) {
+  while (el && el !== stop && el.nodeType === 1) { if (hasC(el, cls)) return el; el = el.parentNode; }
+  return null;
+}
+function txt(el, s) { if (el._t !== s) { el._t = s; el.textContent = s; } }
+function fmt(x) { x = Math.max(0, Math.round(x)); var m = Math.floor(x / 60), r = x % 60; return m + ":" + (r < 10 ? "0" : "") + r; }
+function sget(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+function sset(k, v) { try { if (v == null) window.localStorage.removeItem(k); else window.localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+function now() { return new Date().getTime() + skew; }
+// Safari 5 can't parse "2026-10-26T01:59:12.123456+00:00"
+function parseISO(s) {
+  var m = /^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.(\d+))?(Z|([+\-])(\d\d):?(\d\d))?$/.exec(s || "");
+  if (!m) return NaN;
+  var ms = m[7] ? Math.round(parseFloat("0." + m[7]) * 1000) : 0;
+  var t = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6], ms);
+  if (m[9]) { var off = (+m[10] * 60 + (+m[11])) * 60000; t += (m[9] === "+" ? -off : off); }
+  return t;
+}
+// tap handler without the 300 ms iOS click delay; adds .down while pressed
+function onTap(el, fn) {
+  var sx = 0, sy = 0, mv = false, lastTouch = 0;
+  el.addEventListener("touchstart", function (e) {
+    var t = e.touches[0]; sx = t.clientX; sy = t.clientY; mv = false; tglC(el, "down", true);
+  }, false);
+  el.addEventListener("touchmove", function (e) {
+    var t = e.touches[0];
+    if (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10) { mv = true; tglC(el, "down", false); }
+  }, false);
+  el.addEventListener("touchend", function (e) {
+    tglC(el, "down", false); lastTouch = new Date().getTime();
+    if (mv) return;
+    e.preventDefault();
+    var t = e.changedTouches[0];
+    fn({ target: e.target, clientX: t.clientX, clientY: t.clientY });
+  }, false);
+  el.addEventListener("touchcancel", function () { tglC(el, "down", false); }, false);
+  el.addEventListener("click", function (e) {
+    if (new Date().getTime() - lastTouch < 800) return;
+    fn({ target: e.target, clientX: e.clientX, clientY: e.clientY });
+  }, false);
+}
+
+/* ---------------- HA REST ---------------- */
+var BASE = String(CONFIG.haUrl || "").replace(/\/+$/, "");
+var MA = String(CONFIG.maUrl || "").replace(/\s+/g, "").replace(/\/+$/, "");
+var TOKEN = "";
+var skew = 0;
+
+function readToken() {
+  var m = /token=([^&]+)/.exec(location.hash || "");
+  if (m) {
+    sset("cfToken", decodeURIComponent(m[1]));
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) { location.hash = ""; }
+  }
+  TOKEN = sget("cfToken") || String(CONFIG.token || "").replace(/\s+/g, "");
+}
+
+function api(method, path, body, cb) {
+  var x = new XMLHttpRequest(), done = false;
+  var to = setTimeout(function () {
+    if (done) return; done = true; try { x.abort(); } catch (e) { /* */ }
+    cb({ status: 0, msg: "timeout" });
+  }, 12000);
+  x.onreadystatechange = function () {
+    if (x.readyState !== 4 || done) return;
+    done = true; clearTimeout(to);
+    var d = x.getResponseHeader("Date");
+    if (d) {
+      var sd = Date.parse(d);
+      if (!isNaN(sd)) { var k = sd + 500 - new Date().getTime(); if (Math.abs(k - skew) > 2000) skew = k; }
+    }
+    if (x.status >= 200 && x.status < 300) {
+      var j = null;
+      try { j = x.responseText ? JSON.parse(x.responseText) : null; } catch (e) { /* */ }
+      cb(null, j);
+    } else cb({ status: x.status, msg: String(x.responseText || "").slice(0, 160) });
+  };
+  if (method === "GET") path += (path.indexOf("?") < 0 ? "?" : "&") + "_=" + new Date().getTime();
+  x.open(method, BASE + path, true);
+  x.setRequestHeader("Authorization", "Bearer " + TOKEN);
+  if (body != null) { x.setRequestHeader("Content-Type", "application/json"); x.send(JSON.stringify(body)); }
+  else x.send(null);
+}
+function call(domain, service, data, cb, ret) {
+  api("POST", "/api/services/" + domain + "/" + service + (ret ? "?return_response" : ""), data || {}, function (e, j) {
+    if (e) {
+      if (e.status === 401) needToken(true);
+      if (window.console) console.warn("[cleanframe] " + domain + "." + service, e.status, e.msg);
+    }
+    if (cb) cb(e, j);
+  });
+}
+function mp(service, data, cb) {
+  var d = data || {}; d.entity_id = CONFIG.entity;
+  call("media_player", service, d, cb);
+}
+
+/* ---------------- images ---------------- */
+// HA proxy URLs carry a rotating access token; the rest identifies the picture
+// Music Assistant hands out originals (size=0); ask for a small thumbnail instead
+function sized(u, px) {
+  if (!/\/imageproxy\//.test(u)) return u;
+  if (/[?&]size=\d+/.test(u)) return u.replace(/([?&]size=)\d+/, "$1" + px);
+  return u + (u.indexOf("?") < 0 ? "?" : "&") + "size=" + px;
+}
+function picKey(u) { return String(u || "").replace(/([?&])token=[^&]*&?/, "$1").replace(/[?&]$/, ""); }
+var PIC_TTL = 50 * 60 * 1000;   // HA lets browsers cache proxied pictures for 1 h
+// returns a list of candidate URLs, tried in order
+function imgCands(im) {
+  if (!im) return [];
+  if (typeof im === "string") {
+    if (im.charAt(0) === "/") return [BASE + im];
+    return [sized(im, 512)];
+  }
+  var u = im.path || im.url || "";
+  if (!u) return [];
+  if (/^https?:/i.test(u)) return imgCands(u);
+  if (!MA) return [];
+  return [MA + "/imageproxy?size=300&path=" + encodeURIComponent(u) + (im.provider ? "&provider=" + encodeURIComponent(im.provider) : "")];
+}
+function loadImg(cands, ok) {
+  var i = 0;
+  (function nxt() {
+    if (i >= cands.length) return;
+    var u = cands[i++], im = new Image();
+    im.onload = function () { ok(u); };
+    im.onerror = nxt;
+    im.src = u;
+  })();
+}
+function thumbOf(o) {
+  var imgs = o && o.metadata && o.metadata.images;
+  if (!imgs || !imgs.length) return null;
+  for (var i = 0; i < imgs.length; i++) if (imgs[i] && imgs[i].type === "thumb") return imgs[i];
+  return imgs[0];
+}
+function artistStr(mi) {
+  if (!mi) return "";
+  if (mi.artist_str) return mi.artist_str;
+  if (mi.artists && mi.artists.length) {
+    var a = [];
+    for (var i = 0; i < mi.artists.length; i++) if (mi.artists[i] && mi.artists[i].name) a.push(mi.artists[i].name);
+    return a.join(", ");
+  }
+  return "";
+}
+function cfItem(x) {
+  if (!x) return null;
+  var mi = x.media_item || {}, al = mi.album || null;
+  var c = imgCands(x.image);
+  if (!c.length) c = imgCands(mi.image);
+  if (!c.length) c = imgCands(thumbOf(mi));
+  if (!c.length && al) { c = imgCands(al.image); if (!c.length) c = imgCands(thumbOf(al)); }
+  return { id: x.queue_item_id || mi.item_id || mi.uri || x.name || "", img: c, t: mi.name || x.name || "", a: artistStr(mi), al: (al && al.name) || "" };
+}
+
+/* ---------------- state ---------------- */
+var S = {
+  st: null, stK: "", sw: null, swK: "", loaded: false,
+  nc: null, ncK: "", q: null, fc: 0, hist: [], last: null, qkey: null, qBusy: false, qAgain: false, qWarned: false,
+  busy: 0, pend: [], vloc: null, netErr: "", maErr: "",
+  scale: 1, sx: 1, els: {}, lib: null, entry: CONFIG.maEntry || ""
+};
+var pollT = 0, fast = false;
+
+function st() { return S.st; }
+function attrs() { return (S.st && S.st.attributes) || {}; }
+function swOn() { return !CONFIG.power || !S.sw || S.sw.state === "on"; }
+function ready() { var s = S.st; return !!s && !/^(unavailable|unknown)$/.test(s.state) && (!CONFIG.power || (S.sw && S.sw.state === "on")); }
+function pname() { return CONFIG.name || attrs().friendly_name || "Speaker"; }
+
+/* ---------------- DOM ---------------- */
+var $card = $("#card"), $player = $(".player"), $fl = $(".flow"), $meta = $(".meta"), $t = $(".t"), $a = $(".a"), $diag = $(".diag");
+var $pgw = $(".pgw"), $p1 = $(".p1"), $p2 = $(".p2"), $pg = $(".pg"), $pgi = $(".pg i"), $bt = $(".bt"), $row = $(".row");
+var $dot = $(".dot"), $sct = $(".sc span"), $vl = $(".vl"), $vli = $(".vl i"), $libb = $(".libb");
+var $lib = $(".lib"), $lt = $(".lt"), $lx = $(".lh .x"), $tabs = $(".tabs"), $search = $(".srow input"), $fav = $(".srow .fav"), $ll = $(".ll");
+var $setup = $(".setup"), $smsg = $(".setup .msg"), $stok = $(".setup textarea"), $ssave = $(".setup .save");
+
+/* ---------------- polling ---------------- */
+function poll() {
+  clearTimeout(pollT);
+  if (!TOKEN) return;
+  var left = 1 + (CONFIG.power ? 1 : 0) + (CONFIG.nextCover && !S.ncMissing ? 1 : 0), changed = false;
+  function fin() {
+    if (--left > 0) return;
+    if (changed || !S.loaded) { S.loaded = true; update(); }
+    var playing = S.st && S.st.state === "playing";
+    pollT = setTimeout(poll, fast ? 1000 : (playing ? 2000 : 3000));
+  }
+  api("GET", "/api/states/" + CONFIG.entity, null, function (e, j) {
+    if (e) {
+      netError(e);
+      if (e.status === 404 && S.st) { S.st = null; S.stK = ""; changed = true; }
+    } else {
+      netOk();
+      var k = JSON.stringify(j);
+      if (k !== S.stK) { S.stK = k; S.st = j; changed = true; }
+    }
+    fin();
+  });
+  if (CONFIG.power) api("GET", "/api/states/" + CONFIG.power, null, function (e, j) {
+    if (!e) {
+      var k = j ? j.state : "";
+      if (k !== S.swK) { S.swK = k; S.sw = j; changed = true; }
+    } else if (e.status === 404 && S.sw) { S.sw = null; S.swK = ""; changed = true; }
+    fin();
+  });
+  if (CONFIG.nextCover && !S.ncMissing) api("GET", "/api/states/" + CONFIG.nextCover, null, function (e, j) {
+    if (e) { if (e.status === 404) S.ncMissing = true; }
+    else {
+      var at = (j && j.attributes) || {}, pic = at.entity_picture || "";
+      var k = (at.queue_item_id || "") + "|" + picKey(pic) + "|" + (j && j.state);
+      if (k !== S.ncK) {
+        S.ncK = k;
+        S.nc = (pic && j.state !== "unavailable" && j.state !== "unknown") ? { id: at.queue_item_id || "", pic: pic } : null;
+        changed = true;
+      }
+    }
+    fin();
+  });
+}
+function netError(e) {
+  if (e.status === 401) { needToken(true); return; }
+  if (e.status === 404) return;
+  S.netErr = L.net + (e.status ? " (" + e.status + ")" : "");
+  renderDiag();
+}
+function netOk() { if (S.netErr) { S.netErr = ""; renderDiag(); } }
+
+/* ---------------- rendering ---------------- */
+function update() {
+  renderText(); renderCtl(); renderStatus(); renderVol(); renderProg(); renderFlow(); renderDiag();
+}
+function renderDiag() { txt($diag, S.netErr || S.maErr || ""); }
+
+function renderText() {
+  var s = st(), a = attrs(), q = S.q, fc = S.fc, t, sub, peek = false;
+  if (q && fc) {
+    var fi = q.cache[q.ci + fc]; peek = true;
+    if (fi) { t = fi.t || "—"; sub = [fi.a, fi.al].filter(Boolean).join(" · "); }
+    else { t = L.loading; sub = ""; }
+  } else if (!S.loaded) { t = L.loading; sub = ""; }
+  else if (!s) { t = L.noEntity; sub = CONFIG.entity; }
+  else if (a.media_title) { t = a.media_title; sub = [a.media_artist, a.media_album_name].filter(Boolean).join(" · "); }
+  else { t = L.nothing; sub = /^(unavailable|unknown)$/.test(s.state) ? "" : L.idle; }
+  txt($t, t || " "); txt($a, sub || " ");
+  tglC($meta, "peek", peek);
+}
+
+function renderCtl() {
+  var a = attrs(), pl = !!S.st && S.st.state === "playing", rp = a.repeat || "off";
+  function set(n, html, act) {
+    var b = $('[data-a="' + n + '"]', $bt);
+    if (b._h !== html) { b._h = html; b.innerHTML = html; }
+    tglC(b, "act", !!act);
+  }
+  set("shuf", IC.shuf, !!a.shuffle);
+  set("prev", IC.prev, false);
+  set("pp", pl ? IC.pause : IC.play, false);
+  set("next", IC.next, false);
+  set("rep", rp === "one" ? IC.rep1 : IC.rep, rp === "all" || rp === "one");
+}
+
+function renderStatus() {
+  var s = st(), n = pname(), t, cls;
+  if (S.busy === 1) { t = L.spkOn; cls = "wait"; }
+  else if (S.busy === 2) { t = L.spkFail; cls = "err"; }
+  else if (!s || /^(unavailable|unknown|off)$/.test(s.state) || !swOn()) { t = L.offOn(n); cls = "off"; }
+  else if (/^(playing|paused|buffering)$/.test(s.state)) { t = L.playingOn(n); cls = ""; }
+  else { t = L.readyOn(n); cls = ""; }
+  txt($sct, t);
+  $dot.className = "dot" + (cls ? " " + cls : "");
+}
+
+function curVol() {
+  if (S.vloc && new Date().getTime() - S.vloc.t < 3000) return S.vloc.v;
+  var v = attrs().volume_level;
+  return typeof v === "number" ? v : null;
+}
+function renderVol() { var v = curVol(); $vli.style.width = (v == null ? 0 : Math.round(v * 100)) + "%"; }
+
+function renderProg() {
+  var s = st(), a = attrs(), p = parseFloat(a.media_position), d = parseFloat(a.media_duration);
+  if (isFinite(p) && s && s.state === "playing" && a.media_position_updated_at) {
+    var u = parseISO(a.media_position_updated_at);
+    if (isFinite(u)) p += (now() - u) / 1000;
+  }
+  if (isFinite(p) && isFinite(d) && d > 0) {
+    p = Math.min(Math.max(p, 0), d);
+    $pgi.style.width = (p / d * 100) + "%"; txt($p1, fmt(p)); txt($p2, fmt(d));
+  } else { $pgi.style.width = "0"; txt($p1, ""); txt($p2, ""); }
+}
+
+/* ---------------- turntable ---------------- */
+var TT = null;
+// vinyl texture (drawn once): black disc with fine grooves and a darker lead-out
+function vinylTexture(n) {
+  var c = document.createElement("canvas"); c.width = c.height = n;
+  var g = c.getContext("2d"), r = n / 2, i;
+  g.fillStyle = "#0b0b0c"; g.beginPath(); g.arc(r, r, r, 0, Math.PI * 2); g.fill();
+  for (i = r * 0.98; i > r * 0.36; i -= 1.6) {
+    g.strokeStyle = "rgba(255,255,255," + (0.025 + 0.03 * Math.random()).toFixed(3) + ")";
+    g.lineWidth = 0.6; g.beginPath(); g.arc(r, r, i, 0, Math.PI * 2); g.stroke();
+  }
+  // a few track gaps
+  var gaps = [0.86, 0.74, 0.62, 0.5];
+  for (i = 0; i < gaps.length; i++) {
+    g.strokeStyle = "rgba(0,0,0,.9)"; g.lineWidth = 2.2; g.beginPath(); g.arc(r, r, r * gaps[i], 0, Math.PI * 2); g.stroke();
+  }
+  g.strokeStyle = "rgba(255,255,255,.12)"; g.lineWidth = 1.5; g.beginPath(); g.arc(r, r, r - 1, 0, Math.PI * 2); g.stroke();
+  return c.toDataURL();
+}
+// light reflection that stays still while the record turns
+function sheenTexture(n) {
+  var c = document.createElement("canvas"); c.width = c.height = n;
+  var g = c.getContext("2d"), r = n / 2;
+  function wedge(a0, a1, alpha) {
+    var gr = g.createRadialGradient(r, r, r * 0.36, r, r, r);
+    gr.addColorStop(0, "rgba(255,255,255,0)");
+    gr.addColorStop(0.35, "rgba(255,255,255," + alpha + ")");
+    gr.addColorStop(1, "rgba(255,255,255," + (alpha * 0.4) + ")");
+    g.fillStyle = gr; g.beginPath(); g.moveTo(r, r); g.arc(r, r, r, a0, a1); g.closePath(); g.fill();
+  }
+  // soft-edged highlights: many thin wedges fading out from the centre angle
+  function band(mid, width, alpha) {
+    var k, n = 14;
+    for (k = -n; k < n; k++) {
+      var f = 1 - Math.abs(k + 0.5) / n;
+      wedge(mid + width * k / n, mid + width * (k + 1) / n + 0.004, (alpha * f * f).toFixed(3));
+    }
+  }
+  band(Math.PI * 1.12, Math.PI * 0.16, 0.22);
+  band(Math.PI * 0.12, Math.PI * 0.16, 0.14);
+  g.globalCompositeOperation = "destination-out";
+  g.beginPath(); g.arc(r, r, r * 0.63, 0, Math.PI * 2); g.fill();
+  return c.toDataURL();
+}
+// tonearm, drawn pointing straight down from the pivot at (0,0); length L
+function armSvg(L, s) {
+  var w = Math.round(L * 0.42), h = Math.round(L * 1.32), ox = Math.round(w / 2), oy = Math.round(L * 0.3);
+  function p(x, y) { return (ox + x * s).toFixed(1) + "," + (oy + y * s).toFixed(1); }
+  var tl = L / s;   // arm length in drawing units
+  var svg = '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+    // counterweight
+    '<rect x="' + (ox - 15 * s).toFixed(1) + '" y="' + (oy - 78 * s).toFixed(1) + '" width="' + (30 * s).toFixed(1) + '" height="' + (44 * s).toFixed(1) + '" rx="' + (6 * s).toFixed(1) + '" fill="#2a2c2e"/>' +
+    '<rect x="' + (ox - 12 * s).toFixed(1) + '" y="' + (oy - 74 * s).toFixed(1) + '" width="' + (6 * s).toFixed(1) + '" height="' + (36 * s).toFixed(1) + '" rx="' + (3 * s).toFixed(1) + '" fill="rgba(255,255,255,.12)"/>' +
+    '<rect x="' + (ox - 4 * s).toFixed(1) + '" y="' + (oy - 36 * s).toFixed(1) + '" width="' + (8 * s).toFixed(1) + '" height="' + (36 * s).toFixed(1) + '" fill="#3a3d40"/>' +
+    // tube (slight S-curve towards the headshell)
+    '<path d="M' + p(0, 0) + ' L' + p(0, tl * 0.72) + ' Q' + p(0, tl * 0.86) + ' ' + p(-14, tl * 0.93) + '" stroke="#26292b" stroke-width="' + (12 * s).toFixed(1) + '" stroke-linecap="round" fill="none"/>' +
+    '<path d="M' + p(-2.5, 4) + ' L' + p(-2.5, tl * 0.71) + '" stroke="rgba(255,255,255,.16)" stroke-width="' + (2 * s).toFixed(1) + '" stroke-linecap="round" fill="none"/>' +
+    // headshell + cartridge, stylus tip ends at (0, tl)
+    '<path d="M' + p(-24, tl * 0.92) + ' L' + p(-4, tl * 0.9) + ' L' + p(6, tl * 1.0) + ' L' + p(-14, tl * 1.03) + ' Z" fill="#1d1f21"/>' +
+    '<rect x="' + (ox - 6 * s).toFixed(1) + '" y="' + (oy + (tl * 0.965 - 4) * s).toFixed(1) + '" width="' + (12 * s).toFixed(1) + '" height="' + (9 * s).toFixed(1) + '" fill="#8aaecf"/>' +
+    '<path d="M' + p(-22, tl * 0.925) + ' L' + p(-38, tl * 0.9) + '" stroke="#cfd4d6" stroke-width="' + (3 * s).toFixed(1) + '" stroke-linecap="round" fill="none"/>' +
+    // pivot
+    '<circle cx="' + ox + '" cy="' + oy + '" r="' + (20 * s).toFixed(1) + '" fill="#2f3234"/>' +
+    '<circle cx="' + ox + '" cy="' + oy + '" r="' + (9 * s).toFixed(1) + '" fill="#c9ced0"/>' +
+    '</svg>';
+  return { svg: svg, w: w, h: h, ox: ox, oy: oy };
+}
+function buildDeck(W) {
+  var H = W, u = W / 1000;   // square plinth, drawing units: 1000 x 1000
+  var el = document.createElement("div"); el.className = "tt";
+  el.style.width = W + "px"; el.style.height = H + "px"; el.style.marginLeft = (-W / 2) + "px"; el.style.marginTop = (-H / 2) + "px";
+  el.style.background = CONFIG.deckColor || "#9e2420";
+  var R = Math.round(380 * u), cx = Math.round(500 * u), cy = cx;   // record centred
+  var pl = document.createElement("div"); pl.className = "pl";
+  var pr = R + Math.round(8 * u);
+  pl.style.width = pl.style.height = (pr * 2) + "px"; pl.style.left = (cx - pr) + "px"; pl.style.top = (cy - pr) + "px";
+  var rec = document.createElement("div"); rec.className = "rec";
+  rec.style.left = rec.style.top = rec.style.right = rec.style.bottom = Math.round(8 * u) + "px";
+  if (!TT || !TT.vinyl) TT = { vinyl: vinylTexture(512), sheen: sheenTexture(512) };
+  rec.style.backgroundImage = "url(" + TT.vinyl + ")";
+  var lr = Math.round(R * 0.62);   // album cover as a large round label
+  var lab = document.createElement("div"); lab.className = "lab";
+  lab.style.width = lab.style.height = (lr * 2) + "px"; lab.style.left = lab.style.top = (R - lr) + "px";
+  lab.innerHTML = '<div class="ph">' + IC.note + '</div>';
+  rec.appendChild(lab);
+  var sh = document.createElement("div"); sh.className = "sheen";
+  sh.style.left = sh.style.top = sh.style.right = sh.style.bottom = Math.round(8 * u) + "px";
+  sh.style.backgroundImage = "url(" + TT.sheen + ")"; sh.style.webkitBackgroundSize = "100% 100%";
+  var sp = document.createElement("div"); sp.className = "spin";
+  var sr = Math.max(3, Math.round(7 * u));
+  sp.style.width = sp.style.height = (sr * 2) + "px"; sp.style.left = (pr - sr) + "px"; sp.style.top = (pr - sr) + "px";
+  pl.appendChild(rec); pl.appendChild(sh); pl.appendChild(sp);
+  // tonearm: pivot in the top-right corner, stylus resting beside the record or on the grooves
+  var px = Math.round(900 * u), py = Math.round(100 * u), L = Math.round(700 * u);
+  var arm = armSvg(L, u), ad = document.createElement("div"); ad.className = "arm";
+  ad.innerHTML = arm.svg;
+  ad.style.width = arm.w + "px"; ad.style.height = arm.h + "px";
+  ad.style.left = (px - arm.ox) + "px"; ad.style.top = (py - arm.oy) + "px";
+  ad.style.webkitTransformOrigin = arm.ox + "px " + arm.oy + "px";
+  var kn = document.createElement("div"); kn.className = "knob";
+  var kr = Math.round(22 * u);
+  kn.style.width = kn.style.height = (kr * 2) + "px"; kn.style.left = Math.round(100 * u - kr) + "px"; kn.style.top = Math.round(100 * u - kr) + "px";   // mirrors the arm pivot
+  var gl = document.createElement("div"); gl.className = "gl";
+  el.appendChild(gl); el.appendChild(pl); el.appendChild(kn); el.appendChild(ad);
+  $fl.innerHTML = ""; $fl.appendChild(el);
+  // stylus angles (deg): resting off the record vs. on the outer grooves
+  TT.el = el; TT.rec = rec; TT.lab = lab; TT.arm = ad; TT.W = W; TT.src = null; TT.armPos = null;
+  TT.rest = -3; TT.play = 15.2; TT.travel = 9;
+}
+function renderFlow() {
+  if (!TT || !TT.el) return;
+  var s = st(), a = attrs(), playing = !!s && s.state === "playing";
+  tglC(TT.rec, "on", playing);
+  var on = playing || (!!s && s.state === "paused" && !!a.media_title);
+  // the arm sits on the record while playing; lifts back while paused/stopped
+  var ang = playing ? TT.play + prog() * TT.travel : TT.rest;
+  if (TT.armPos === null || Math.abs(ang - TT.armPos) > 0.3) {
+    TT.armPos = ang; TT.arm.style.webkitTransform = "rotate(" + ang.toFixed(2) + "deg)";
+  }
+  var pic = a.entity_picture ? imgCands(a.entity_picture) : [];
+  var key = on ? (a.media_title || "") + "|" + picKey(pic[0] || "") : "";
+  if (TT.src === key) return;
+  TT.src = key;
+  if (!pic.length || !on) { setLabel(null, key); return; }
+  loadImg(pic, function (u) { if (TT.src === key) setLabel(u, key); });
+}
+function prog() {
+  var a = attrs(), p = parseFloat(a.media_position), d = parseFloat(a.media_duration);
+  if (!isFinite(p) || !isFinite(d) || d <= 0) return 0;
+  if (S.st && S.st.state === "playing" && a.media_position_updated_at) {
+    var u = parseISO(a.media_position_updated_at); if (isFinite(u)) p += (now() - u) / 1000;
+  }
+  return Math.max(0, Math.min(1, p / d));
+}
+// cross-fade to the new label
+function setLabel(u, key) {
+  var lab = TT.lab, old = lab.lastChild;
+  var d = document.createElement("div");
+  if (u) d.style.backgroundImage = 'url("' + u.replace(/"/g, "%22") + '")';
+  else { d.className = "ph"; d.innerHTML = IC.note; }
+  d.style.opacity = "0";
+  lab.appendChild(d);
+  void d.offsetWidth;
+  d.style.opacity = u ? "1" : ".4";
+  setTimeout(function () { while (lab.firstChild && lab.firstChild !== d) lab.removeChild(lab.firstChild); }, 900);
+}
+
+/* ---------------- layout ---------------- */
+function layout() {
+  tglC($player, "narrow", $player.clientWidth < 820);
+  var H = $player.clientHeight;
+  $player.style.paddingTop = "0px";
+  $fl.style.height = "0px";
+  var rest = $meta.offsetHeight + $pgw.offsetHeight + 8 + $bt.offsetHeight + 12 + $row.offsetHeight + 18 + 30;
+  var fh = Math.max(160, H - rest);
+  var fw = $fl.clientWidth || ($player.clientWidth - 60);
+  var W = Math.floor(Math.min(fh - 24, fw - 20, 560));
+  fh = Math.min(fh, W + 30);
+  $fl.style.height = fh + "px";
+  $player.style.paddingTop = Math.max(10, Math.round((H - rest - fh) / 2 + 10)) + "px";
+  if (!TT || !TT.el || Math.abs(TT.W - W) > 2) { buildDeck(W); renderFlow(); }
+}
+
+/* ---------------- turntable gestures ---------------- */
+var pendT = 0;
+function move(d) { act(d > 0 ? "next" : "prev"); }
+function tapCover(target) { if (closest(target, "pl", $fl)) act("pp"); }
+
+/* ---------------- queue (music_assistant.get_queue via REST) ---------------- */
+function checkQueue() {
+  var s = st(); if (!s || /^(unavailable|unknown)$/.test(s.state)) return;
+  var a = attrs(), k = [a.media_title, a.media_artist, a.media_album_name, a.media_content_id, a.shuffle].join("|");
+  if (k === S.qkey) return;
+  S.qkey = k; fetchQueue();
+}
+function fetchQueue() {
+  if (S.qBusy) { S.qAgain = true; return; }
+  S.qBusy = true;
+  call("music_assistant", "get_queue", { entity_id: CONFIG.entity }, function (e, j) {
+    S.qBusy = false;
+    if (e) {
+      if (!S.qWarned && e.status !== 401) { S.qWarned = true; S.maErr = L.noQueue; renderDiag(); }
+    } else {
+      if (S.maErr) { S.maErr = ""; renderDiag(); }
+      var r = (j && j.service_response) || {}, q = r[CONFIG.entity];
+      if (!q) for (var k in r) if (r.hasOwnProperty(k)) { q = r[k]; break; }
+      if (q) onQueue(q);
+    }
+    if (S.qAgain) { S.qAgain = false; fetchQueue(); }
+  }, true);
+}
+function onQueue(r) {
+  var cur = cfItem(r.current_item), nx = cfItem(r.next_item);
+  var ci = typeof r.current_index === "number" ? r.current_index : 0;
+  var a = attrs(), qid = r.queue_id || a.active_queue || a.mass_player_id || "";
+  var old = S.q, same = !!old && old.qid === qid, n;
+  if (!cur && !qid) { S.q = null; S.fc = 0; renderFlow(); renderText(); return; }
+  if (!old) {
+    // restore the covers we saw before the page was reloaded
+    try {
+      var sv = JSON.parse(sget("cfHist") || "null");
+      if (sv && sv.qid === qid) { S.hist = sv.hist || []; S.last = sv.last || null; }
+    } catch (e) { /* */ }
+  } else if (!same) { S.hist = []; S.last = null; }
+  var changed = !!cur && (!S.last || S.last.id !== cur.id);
+  if (changed) {
+    if (S.last) { S.hist.push(S.last); if (S.hist.length > 4) S.hist.shift(); }
+    S.fc = 0; clearTimeout(pendT);
+  }
+  if (cur) S.last = cur;
+  sset("cfHist", JSON.stringify({ qid: qid, hist: S.hist, last: S.last }));
+  var c = {};
+  if (same) for (n = ci - 4; n <= ci + 4; n++) if (old.cache[n]) c[n] = old.cache[n];
+  for (var i = 0; i < S.hist.length; i++) { n = ci - S.hist.length + i; if (n >= 0 && !c[n]) c[n] = S.hist[i]; }
+  c[ci] = cur || c[ci] || { id: "cur", img: [], t: "", a: "", al: "" };
+  if (nx) c[ci + 1] = nx;
+  for (n in c) if (c.hasOwnProperty(n) && (+n < ci - 4 || +n > ci + 1)) delete c[n];
+  S.q = { cache: c, ci: ci, qid: qid };
+  if (S.fc && !c[ci + S.fc]) S.fc = 0;
+  renderFlow(); renderText();
+}
+
+/* ---------------- speaker power ---------------- */
+var waitT = 0;
+function ensure(cb) {
+  if (ready() && S.busy !== 1) { cb(); return; }
+  S.pend.push(cb);
+  if (S.busy === 1) return;
+  var wasReady = ready();
+  if (CONFIG.power && S.sw && S.sw.state !== "on") call("switch", "turn_on", { entity_id: CONFIG.power });
+  S.busy = 1; fast = true; renderStatus(); poll();
+  var n = 0; clearInterval(waitT);
+  waitT = setInterval(function () {
+    n++;
+    if (ready()) {
+      clearInterval(waitT);
+      // give Music Assistant a moment to pick up the player after power-on
+      setTimeout(function () {
+        S.busy = 0; fast = false;
+        var p = S.pend; S.pend = [];
+        for (var i = 0; i < p.length; i++) { try { p[i](); } catch (e) { /* */ } }
+        update();
+      }, wasReady ? 0 : 2000);
+    } else if (n >= 45) {
+      clearInterval(waitT); S.busy = 2; S.pend = []; fast = false; update();
+      setTimeout(function () { if (S.busy === 2) { S.busy = 0; update(); } }, 4500);
+    }
+  }, 1000);
+}
+
+/* ---------------- transport / volume ---------------- */
+function act(a) {
+  ensure(function () {
+    var at = attrs();
+    if (a === "shuf") mp("shuffle_set", { shuffle: !at.shuffle });
+    else if (a === "prev") mp("media_previous_track");
+    else if (a === "pp") mp("media_play_pause");
+    else if (a === "next") mp("media_next_track");
+    else if (a === "rep") { var r = at.repeat || "off"; mp("repeat_set", { repeat: r === "off" ? "all" : (r === "all" ? "one" : "off") }); }
+    setTimeout(poll, 400);
+  });
+}
+function volSet(v) {
+  v = Math.max(0, Math.min(1, Math.round(v * 100) / 100));
+  S.vloc = { v: v, t: new Date().getTime() }; renderVol();
+  ensure(function () { mp("volume_set", { volume_level: v }); });
+}
+function frac(el, x) { var rc = el.getBoundingClientRect(); return Math.max(0, Math.min(1, (x - rc.left) / rc.width)); }
+
+/* ---------------- library (music_assistant.get_library via REST) ---------------- */
+function openLib() {
+  tglC($player, "hide", true); tglC($lib, "hide", false);
+  if (!S.lib) S.lib = { type: "playlist", fav: false, q: "", items: [], off: 0, more: false, load: false, err: "", seq: 0 };
+  renderTabs(); libLoad(true);
+}
+function closeLib() {
+  try { $search.blur(); } catch (e) { /* */ }
+  tglC($lib, "hide", true); tglC($player, "hide", false);
+  layout(); renderFlow();
+}
+function ensureEntry(cb) {
+  if (S.entry) { cb(true); return; }
+  api("GET", "/api/config/config_entries/entry?domain=music_assistant", null, function (e, j) {
+    if (!e && j && j.length) {
+      for (var i = 0; i < j.length; i++) if (j[i].state === "loaded") { S.entry = j[i].entry_id; break; }
+      if (!S.entry) S.entry = j[0].entry_id;
+    }
+    cb(!!S.entry);
+  });
+}
+function libLoad(reset) {
+  var b = S.lib; if (!b) return;
+  if (reset) { b.items = []; b.off = 0; b.more = false; $ll.scrollTop = 0; lazyQ = []; }
+  b.load = true; b.err = ""; var seq = ++b.seq;
+  renderLib();
+  ensureEntry(function (ok) {
+    if (seq !== b.seq) return;
+    if (!ok) { b.load = false; b.err = L.noEntry; renderLib(); return; }
+    var d = { config_entry_id: S.entry, media_type: b.type, limit: 60, offset: b.off };
+    if (b.fav) d.favorite = true;
+    if (b.q) d.search = b.q;
+    call("music_assistant", "get_library", d, function (e, j) {
+      if (seq !== b.seq) return;
+      b.load = false;
+      if (e) { b.err = L.libErr + (e.status ? " (" + e.status + ")" : ""); renderLib(); return; }
+      var items = (j && j.service_response && j.service_response.items) || [];
+      for (var i = 0; i < items.length; i++) b.items.push(items[i]);
+      b.off += items.length; b.more = items.length >= 60;
+      renderLib();
+    }, true);
+  });
+}
+function renderTabs() {
+  var b = S.lib;
+  if (!$tabs._built) {
+    $tabs._built = true;
+    for (var i = 0; i < TABS.length; i++) (function (tp) {
+      var d = document.createElement("div"); d.className = "tab"; d.setAttribute("data-t", tp); d.textContent = L.tabs[tp];
+      onTap(d, function () { if (S.lib.type === tp) return; S.lib.type = tp; renderTabs(); libLoad(true); });
+      $tabs.appendChild(d);
+    })(TABS[i]);
+  }
+  var ts = $$(".tab", $tabs);
+  for (var k = 0; k < ts.length; k++) tglC(ts[k], "on", ts[k].getAttribute("data-t") === b.type);
+  tglC($fav, "on", b.fav);
+  txt($lt, L.lib + " · " + L.tabs[b.type]);
+}
+function subOf(it) {
+  var a = artistStr(it);
+  if (it.media_type === "track" && it.album && it.album.name) a = a ? a + " · " + it.album.name : it.album.name;
+  if (!a && it.owner) a = it.owner;
+  return a || "";
+}
+function renderLib() {
+  var b = S.lib; if (!b) return;
+  var keepTop = $ll.scrollTop;
+  $ll.innerHTML = ""; lazyQ = [];
+  function note(t) { var d = document.createElement("div"); d.className = "bn"; d.textContent = t; $ll.appendChild(d); }
+  if (!b.items.length) {
+    if (b.load) note(S.busy === 1 ? L.spkOn : L.loading);
+    else if (b.err) note(b.err);
+    else note(L.empty);
+    return;
+  }
+  var frag = document.createDocumentFragment();
+  for (var i = 0; i < b.items.length; i++) {
+    var it = b.items[i], d = document.createElement("div"), sub = subOf(it);
+    d.className = "bi" + (sub ? "" : " single"); d.setAttribute("data-i", String(i));
+    var th = document.createElement("div"); th.className = "th";
+    th.innerHTML = (it.media_type === "track" || it.media_type === "radio") ? IC.note : IC.folder;
+    var c = imgCands(it.image);
+    if (c.length) { th._c = [sized(c[0], 160)].concat(c.slice(1)); lazyQ.push(th); }
+    var bx = document.createElement("div"); bx.className = "bx";
+    var nm = document.createElement("div"); nm.className = "n"; nm.textContent = it.name || "—"; bx.appendChild(nm);
+    if (sub) { var sb = document.createElement("div"); sb.className = "s"; sb.textContent = sub; bx.appendChild(sb); }
+    d.appendChild(th); d.appendChild(bx);
+    frag.appendChild(d);
+  }
+  if (b.more || b.load) {
+    var m = document.createElement("div"); m.className = "more"; m.textContent = b.load ? L.loading : L.more; frag.appendChild(m);
+  } else if (b.err) {
+    var er = document.createElement("div"); er.className = "bn"; er.textContent = b.err; frag.appendChild(er);
+  }
+  $ll.appendChild(frag);
+  $ll.scrollTop = keepTop;
+  lazyRun();
+}
+/* load thumbnails only for rows that are (nearly) visible, a few at a time */
+var lazyQ = [], lazyBusy = 0, LAZY_MAX = 3;
+function lazyRun() {
+  var top = $ll.scrollTop, bot = top + $ll.clientHeight + 300, i, th, y;
+  for (i = 0; i < lazyQ.length && lazyBusy < LAZY_MAX; i++) {
+    th = lazyQ[i];
+    if (!th.parentNode || !th.parentNode.parentNode) { lazyQ.splice(i--, 1); continue; }
+    y = th.parentNode.offsetTop;
+    if (y + 68 < top - 300 || y > bot) continue;
+    lazyQ.splice(i--, 1); lazyBusy++;
+    (function (th) {
+      var done = false;
+      function fin() { if (done) return; done = true; lazyBusy--; lazyRun(); }
+      var c = th._c, k = 0;
+      (function nxt() {
+        if (k >= c.length) { fin(); return; }
+        var u = c[k++], im = new Image(), to = setTimeout(function () { im.onload = im.onerror = null; nxt(); }, 6000);
+        im.onload = function () {
+          clearTimeout(to);
+          if (th.parentNode) { th.style.backgroundImage = 'url("' + u.replace(/"/g, "%22") + '")'; tglC(th, "has", true); }
+          fin();
+        };
+        im.onerror = function () { clearTimeout(to); nxt(); };
+        im.src = u;
+      })();
+    })(th);
+  }
+}
+function libPlay(it) {
+  closeLib();
+  ensure(function () {
+    call("music_assistant", "play_media", { entity_id: CONFIG.entity, media_id: it.uri, media_type: it.media_type, enqueue: "replace" }, function (e) {
+      if (!e) { setTimeout(poll, 600); return; }
+      // fallback: plain media_player.play_media
+      mp("play_media", { media_content_id: it.uri, media_content_type: "music", enqueue: "replace" }, function (e2) {
+        if (e2) { S.maErr = L.playErr; renderDiag(); setTimeout(function () { S.maErr = ""; renderDiag(); }, 5000); }
+        setTimeout(poll, 600);
+      });
+    });
+  });
+}
+
+/* ---------------- setup (token) ---------------- */
+function needToken(bad) {
+  clearTimeout(pollT);
+  txt($smsg, bad ? L.badTok : L.setupT);
+  tglC($smsg, "err", !!bad);
+  tglC($setup, "hide", false);
+}
+
+/* ---------------- events ---------------- */
+function bind() {
+  // transport buttons
+  var bs = $$(".b", $bt);
+  for (var i = 0; i < bs.length; i++) (function (b) { onTap(b, function () { act(b.getAttribute("data-a")); }); })(bs[i]);
+  // seek
+  onTap($pg, function (e) {
+    var d = parseFloat(attrs().media_duration); if (!isFinite(d) || d <= 0) return;
+    var f = frac($pg, e.clientX);
+    ensure(function () { mp("media_seek", { seek_position: Math.round(f * d) }); setTimeout(poll, 500); });
+  });
+  // volume
+  var vb = $$(".vb", $row);
+  for (var k = 0; k < vb.length; k++) (function (b) {
+    onTap(b, function () { var v = curVol(); if (v == null) v = 0; volSet(v + (+b.getAttribute("data-v")) * 0.05); });
+  })(vb[k]);
+  onTap($vl, function (e) { volSet(frac($vl, e.clientX)); });
+  // library
+  onTap($libb, openLib);
+  onTap($lx, closeLib);
+  onTap($fav, function () { S.lib.fav = !S.lib.fav; renderTabs(); libLoad(true); });
+  var sT = 0;
+  $search.addEventListener("keyup", function (e) {
+    clearTimeout(sT);
+    var v = $search.value.replace(/^\s+|\s+$/g, "");
+    if (v === S.lib.q && e.keyCode !== 13) return;
+    sT = setTimeout(function () { S.lib.q = v; libLoad(true); if (e.keyCode === 13) $search.blur(); }, e.keyCode === 13 ? 0 : 600);
+  }, false);
+  $search.addEventListener("search", function () { S.lib.q = $search.value.replace(/^\s+|\s+$/g, ""); libLoad(true); }, false);
+  // list taps (must not fight with native scrolling)
+  var lx = 0, ly = 0, lmv = false, lel = null, lastT = 0;
+  function listHit(target) {
+    var row = closest(target, "bi", $ll);
+    if (row) { var it = S.lib.items[+row.getAttribute("data-i")]; if (it) libPlay(it); return; }
+    if (closest(target, "more", $ll) && S.lib.more && !S.lib.load) libLoad(false);
+  }
+  $ll.addEventListener("touchstart", function (e) {
+    var t = e.touches[0]; lx = t.clientX; ly = t.clientY; lmv = false;
+    lel = closest(e.target, "bi", $ll) || closest(e.target, "more", $ll);
+    if (lel) setTimeout(function () { if (!lmv && lel) tglC(lel, "down", true); }, 90);
+  }, false);
+  $ll.addEventListener("touchmove", function (e) {
+    var t = e.touches[0];
+    if (Math.abs(t.clientX - lx) > 8 || Math.abs(t.clientY - ly) > 8) { lmv = true; if (lel) tglC(lel, "down", false); }
+  }, false);
+  $ll.addEventListener("touchend", function (e) {
+    if (lel) tglC(lel, "down", false);
+    lastT = new Date().getTime();
+    if (lmv) return;
+    e.preventDefault(); listHit(e.target);
+  }, false);
+  $ll.addEventListener("click", function (e) { if (new Date().getTime() - lastT > 800) listHit(e.target); }, false);
+  $ll.addEventListener("scroll", function () {
+    lazyRun();
+    var b = S.lib;
+    if (b && b.more && !b.load && $ll.scrollTop + $ll.clientHeight > $ll.scrollHeight - 400) libLoad(false);
+  }, false);
+
+  // cover flow: swipe + tap
+  var fx = 0, fy = 0, ft = 0, fLast = 0;
+  $fl.addEventListener("touchstart", function (e) { var t = e.touches[0]; fx = t.clientX; fy = t.clientY; ft = 1; }, false);
+  $fl.addEventListener("touchmove", function (e) {
+    var t = e.touches[0];
+    if (Math.abs(t.clientX - fx) > 8 && Math.abs(t.clientX - fx) > Math.abs(t.clientY - fy)) e.preventDefault();
+  }, false);
+  $fl.addEventListener("touchend", function (e) {
+    if (!ft) return; ft = 0; fLast = new Date().getTime();
+    var t = e.changedTouches[0], dx = t.clientX - fx, dy = t.clientY - fy;
+    e.preventDefault();
+    // inside the combined app (home.html) a sideways swipe switches screens instead
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { if (window.top === window) move(dx < 0 ? 1 : -1); }
+    else if (Math.abs(dx) < 12 && Math.abs(dy) < 12) tapCover(e.target);
+  }, false);
+  $fl.addEventListener("click", function (e) { if (new Date().getTime() - fLast > 800) tapCover(e.target); }, false);
+  // mouse drag (desktop testing)
+  var mx = null;
+  $fl.addEventListener("mousedown", function (e) { mx = e.clientX; }, false);
+  $fl.addEventListener("mouseup", function (e) {
+    if (mx == null) return; var dx = e.clientX - mx; mx = null;
+    if (Math.abs(dx) > 36) { fLast = new Date().getTime(); move(dx < 0 ? 1 : -1); }
+  }, false);
+
+  // long press on the status text → token screen
+  var lpT = 0;
+  $(".sc").addEventListener("touchstart", function () { lpT = setTimeout(function () { needToken(false); }, 2500); }, false);
+  $(".sc").addEventListener("touchend", function () { clearTimeout(lpT); }, false);
+  $(".sc").addEventListener("touchmove", function () { clearTimeout(lpT); }, false);
+
+  // setup screen
+  txt($ssave, L.save);
+  onTap($ssave, function () {
+    var v = $stok.value.replace(/\s+/g, "");
+    if (!v) return;
+    sset("cfToken", v); TOKEN = v; $stok.value = ""; $stok.blur();
+    tglC($setup, "hide", true);
+    S.loaded = false; poll();
+  });
+
+  // keep the page itself from scrolling / rubber-banding (only the library list scrolls)
+  document.addEventListener("touchmove", function (e) {
+    if (closest(e.target, "ll", document.body)) return;
+    if (e.target && e.target.tagName === "TEXTAREA") return;
+    e.preventDefault();
+  }, false);
+
+  window.addEventListener("orientationchange", function () { setTimeout(layout, 120); }, false);
+  window.addEventListener("resize", function () { setTimeout(layout, 60); }, false);
+}
+
+/* ---------------- start ---------------- */
+function start() {
+  txt($libb, "♪ " + L.lib);
+  $search.setAttribute("placeholder", L.search);
+  txt($fav, L.fav);
+  bind();
+  renderCtl(); renderText(); renderFlow();
+  layout();
+  setInterval(function () { renderProg(); renderFlow(); }, 1000);
+  readToken();
+  if (!TOKEN) { needToken(false); return; }
+  poll();
+}
+start();
+if (window.console) console.log("CleanFrame Music iPad v" + VERSION);
+})();
+</script>
+</body>
+</html>

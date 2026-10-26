@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<!--
+  CleanFrame Flip Clock — iPad (1. nesil, iOS 5.1.1)  v1.1.0
+  Klasik çevirmeli (flip) saat: saat ve dakika kartları değişirken ortadan katlanarak döner.
+  iPad'in kendi saatini kullanır; altında Home Assistant'tan hava durumu gösterir (bağlantı yoksa saat yine çalışır).
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>Saat</title>
+<style>
+html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#e9e9e6;
+ font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;-webkit-text-size-adjust:none;
+ -webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:rgba(0,0,0,0)}
+#clock{position:absolute;left:50%;top:50%;white-space:nowrap;font-size:0}
+.grp{display:inline-block;vertical-align:top}
+.card{position:relative;display:inline-block;vertical-align:top;-webkit-perspective:1200px}
+.half,.leaf{position:absolute;left:0;right:0;height:50%;overflow:hidden;
+ background:#1d1d1f;background:-webkit-linear-gradient(top,#262628,#1a1a1c)}
+.top,.ltop{top:0;border-radius:inherit;border-bottom-left-radius:0;border-bottom-right-radius:0}
+.bot,.lbot{bottom:0;border-radius:inherit;border-top-left-radius:0;border-top-right-radius:0;
+ background:#19191b;background:-webkit-linear-gradient(top,#1c1c1e,#141416)}
+.half span,.leaf span{position:absolute;left:0;right:0;text-align:center;
+ font-family:"HelveticaNeue-Bold","Helvetica Neue",Helvetica,Arial,sans-serif;font-weight:bold}
+.top span,.ltop span{top:0}
+.bot span,.lbot span{bottom:0}
+/* the hairline split across the middle of each card */
+.card .gap{position:absolute;left:0;right:0;top:50%;height:2px;margin-top:-1px;background:#000;z-index:5}
+.leaf{z-index:3;-webkit-backface-visibility:hidden;display:none}
+.ltop{-webkit-transform-origin:50% 100%}
+.lbot{-webkit-transform-origin:50% 0}
+.flip .ltop,.flip .lbot{display:block}
+.flip .ltop{-webkit-animation:fl-top .32s ease-in forwards}
+.flip .lbot{-webkit-transform:rotateX(90deg);-webkit-animation:fl-bot .32s .32s ease-out forwards}
+@-webkit-keyframes fl-top{from{-webkit-transform:rotateX(0deg)}to{-webkit-transform:rotateX(-90deg)}}
+@-webkit-keyframes fl-bot{from{-webkit-transform:rotateX(90deg)}to{-webkit-transform:rotateX(0deg)}}
+/* shading while a leaf turns */
+.ltop .sh,.lbot .sh{position:absolute;top:0;left:0;right:0;bottom:0;background:#000;opacity:0}
+.flip .ltop .sh{-webkit-animation:sh-in .32s ease-in forwards}
+.flip .lbot .sh{opacity:.5;-webkit-animation:sh-out .32s .32s ease-out forwards}
+@-webkit-keyframes sh-in{from{opacity:0}to{opacity:.55}}
+@-webkit-keyframes sh-out{from{opacity:.5}to{opacity:0}}
+.bot .sh2{position:absolute;top:0;left:0;right:0;bottom:0;background:#000;opacity:0}
+.flip .bot .sh2{-webkit-animation:sh-bot .64s ease-out forwards}
+@-webkit-keyframes sh-bot{0%{opacity:0}50%{opacity:.35}100%{opacity:0}}
+.date{position:absolute;left:0;right:0;text-align:center;color:#8d8d90;letter-spacing:1px;
+ font-family:"HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif}
+.sec{position:absolute;left:0;right:0;height:4px}
+.sec i{display:block;height:4px;width:0;margin:0 auto;border-radius:2px;background:#3a3a3d;-webkit-transition:width 1s linear}
+.wx{position:absolute;left:0;right:0;text-align:center;color:#c9c9c6;white-space:nowrap;opacity:0;-webkit-transition:opacity .8s;
+ font-family:"HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif}
+.wx.on{opacity:1}
+.wx svg{display:inline-block;vertical-align:middle;stroke:#c9c9c6;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.wx .tp{font-family:"HelveticaNeue-Medium","Helvetica Neue",Helvetica,Arial,sans-serif;color:#e9e9e6;vertical-align:middle}
+.wx .cd,.wx .hl{vertical-align:middle;color:#8d8d90}
+</style>
+</head>
+<body>
+<div id="clock"></div>
+<div class="sec"><i></i></div>
+<div class="date"></div>
+<div class="wx"></div>
+<script>
+(function () {
+"use strict";
+var VERSION = "1.1.0";
+var CONFIG = {
+  token: "",
+  weather: "weather.home",   // boş bırakılırsa hava durumu gösterilmez
+  haUrl: ""
+};
+var DAYS = ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"];
+var MONTHS = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+
+var clock = document.getElementById("clock"), $date = document.querySelector(".date");
+var $sec = document.querySelector(".sec"), $seci = document.querySelector(".sec i");
+var cards = [];
+
+function card() {
+  var c = document.createElement("div"); c.className = "card";
+  c.innerHTML =
+    '<div class="half top"><span></span></div>' +
+    '<div class="half bot"><span></span><div class="sh2"></div></div>' +
+    '<div class="leaf ltop"><span></span><div class="sh"></div></div>' +
+    '<div class="leaf lbot"><span></span><div class="sh"></div></div>' +
+    '<div class="gap"></div>';
+  var s = c.getElementsByTagName("span");
+  return { el: c, top: s[0], bot: s[1], ltop: s[2], lbot: s[3], v: null, t: 0 };
+}
+function build() {
+  var g1 = document.createElement("div"), g2 = document.createElement("div");
+  g1.className = g2.className = "grp";
+  for (var i = 0; i < 4; i++) { var c = card(); cards.push(c); (i < 2 ? g1 : g2).appendChild(c.el); }
+  clock.appendChild(g1); clock.appendChild(g2);
+}
+
+/* ---------------- sizing ---------------- */
+function layout() {
+  var W = window.innerWidth, H = window.innerHeight, port = H > W;
+  // card width cw, height ch; 4 cards + small gaps + bigger gap between hours and minutes
+  var cw = Math.floor(Math.min((W - 120) / (4 + 0.07 * 8 + 0.5), (H * (port ? 0.42 : 0.6)) / 1.42));
+  var ch = Math.round(cw * 1.42), gap = Math.round(cw * 0.07), mid = Math.round(cw * 0.5), r = Math.round(cw * 0.08);
+  for (var i = 0; i < cards.length; i++) {
+    var c = cards[i], st = c.el.style;
+    st.width = cw + "px"; st.height = ch + "px"; st.margin = "0 " + gap + "px";
+    st.borderRadius = r + "px";
+    var spans = c.el.getElementsByTagName("span");
+    for (var k = 0; k < spans.length; k++) {
+      spans[k].style.fontSize = Math.round(ch * 0.86) + "px";
+      spans[k].style.lineHeight = ch + "px"; spans[k].style.height = ch + "px";
+    }
+    var halves = c.el.querySelectorAll(".half,.leaf");
+    for (var h = 0; h < halves.length; h++) halves[h].style.borderRadius = r + "px";
+  }
+  clock.firstChild.style.marginRight = mid + "px";
+  var tw = clock.offsetWidth, th = ch;
+  clock.style.marginLeft = (-tw / 2) + "px";
+  clock.style.marginTop = (-th / 2 - Math.round(ch * 0.08)) + "px";
+  $date.style.fontSize = Math.round(cw * 0.2) + "px";
+  $date.style.top = Math.round(H / 2 + th / 2 + ch * 0.08) + "px";
+  $sec.style.top = Math.round(H / 2 + th / 2 + ch * 0.02) + "px";
+  $seci.style.maxWidth = tw + "px";
+  S_TW = tw;
+  $wx.style.fontSize = Math.round(cw * 0.2) + "px";
+  $wx.style.top = Math.round(H / 2 + th / 2 + ch * 0.08 + cw * 0.42) + "px";
+  WX_ICON = Math.round(cw * 0.3);
+  renderWx();
+}
+var S_TW = 0;
+
+/* ---------------- flipping ---------------- */
+function set(c, v, animate) {
+  if (c.v === v) return;
+  var old = c.v;
+  c.v = v;
+  if (!animate || old === null) {
+    c.top.textContent = c.bot.textContent = c.ltop.textContent = c.lbot.textContent = v;
+    return;
+  }
+  // static halves: new top, old bottom; leaves: old top folds down, new bottom folds in
+  c.top.textContent = v; c.bot.textContent = old;
+  c.ltop.textContent = old; c.lbot.textContent = v;
+  c.el.className = "card"; void c.el.offsetWidth;
+  c.el.className = "card flip";
+  clearTimeout(c.t);
+  c.t = setTimeout(function () {
+    c.bot.textContent = v; c.ltop.textContent = v;
+    c.el.className = "card";
+  }, 700);
+}
+function tick(animate) {
+  var d = new Date(), h = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
+  var t = (h < 10 ? "0" : "") + h + (m < 10 ? "0" : "") + m;
+  for (var i = 0; i < 4; i++) set(cards[i], t.charAt(i), animate);
+  $date.textContent = d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear() + "  ·  " + DAYS[d.getDay()];
+  // a thin bar that fills up over the minute
+  $seci.style.width = Math.round(S_TW * (s + 1) / 60) + "px";
+  if (s === 59) setTimeout(function () { $seci.style.webkitTransition = "none"; $seci.style.width = "0"; void $seci.offsetWidth; $seci.style.webkitTransition = ""; }, 950);
+}
+
+/* ---------------- weather (Home Assistant) ---------------- */
+var $wx = document.querySelector(".wx"), WX_ICON = 30, WX = { st: null, hi: null, lo: null };
+var COND = {
+  "clear-night": "Açık", cloudy: "Bulutlu", exceptional: "Olağanüstü", fog: "Sisli", hail: "Dolu",
+  lightning: "Şimşekli", "lightning-rainy": "Gök gürültülü sağanak", partlycloudy: "Parçalı bulutlu",
+  pouring: "Sağanak", rainy: "Yağmurlu", snowy: "Karlı", "snowy-rainy": "Karla karışık yağmur",
+  sunny: "Güneşli", windy: "Rüzgârlı", "windy-variant": "Rüzgârlı, bulutlu"
+};
+var CLOUD = '<path d="M7 18h10a4 4 0 0 0 .6-7.96A5.5 5.5 0 0 0 7.1 9.6 4.2 4.2 0 0 0 7 18z"/>';
+var ICON = {
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
+  moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+  cloud: CLOUD,
+  part: '<circle cx="8" cy="8" r="3"/><path d="M8 2.5v1.2M2.5 8h1.2M4.1 4.1l.9.9M11.9 4.1l-.9.9"/>' + '<path d="M9 19h8a3.5 3.5 0 0 0 .5-6.97A4.8 4.8 0 0 0 8.9 12.8 3.1 3.1 0 0 0 9 19z"/>',
+  rain: '<path d="M7 15h10a4 4 0 0 0 .6-7.96A5.5 5.5 0 0 0 7.1 6.6 4.2 4.2 0 0 0 7 15z"/><path d="M8 18l-1 3M12 18l-1 3M16 18l-1 3"/>',
+  snow: CLOUD + '<path d="M9 21h.01M12 20h.01M15 21h.01"/>',
+  bolt: CLOUD + '<path d="M12.5 13l-2 4h3l-2 4"/>',
+  fog: '<path d="M4 9h16M3 13h18M5 17h14"/>',
+  wind: '<path d="M3 9h11a3 3 0 1 0-3-3M3 15h15a3 3 0 1 1-3 3"/>'
+};
+var ICON_OF = { "clear-night": "moon", cloudy: "cloud", exceptional: "cloud", fog: "fog", hail: "snow", lightning: "bolt",
+  "lightning-rainy": "bolt", partlycloudy: "part", pouring: "rain", rainy: "rain", snowy: "snow", "snowy-rainy": "snow",
+  sunny: "sun", windy: "wind", "windy-variant": "wind" };
+function wxToken() { try { return window.localStorage.getItem("cfToken") || CONFIG.token; } catch (e) { return CONFIG.token; } }
+function req(method, path, body, cb) {
+  var x = new XMLHttpRequest(), done = false;
+  var to = setTimeout(function () { if (done) return; done = true; try { x.abort(); } catch (e) { /* */ } cb(null); }, 12000);
+  x.onreadystatechange = function () {
+    if (x.readyState !== 4 || done) return;
+    done = true; clearTimeout(to);
+    var j = null; if (x.status === 200) { try { j = JSON.parse(x.responseText); } catch (e) { /* */ } }
+    cb(j);
+  };
+  x.open(method, String(CONFIG.haUrl || "").replace(/\/+$/, "") + path + (method === "GET" ? "?_=" + new Date().getTime() : ""), true);
+  x.setRequestHeader("Authorization", "Bearer " + wxToken());
+  if (body) { x.setRequestHeader("Content-Type", "application/json"); x.send(JSON.stringify(body)); } else x.send(null);
+}
+function loadWx() {
+  if (!CONFIG.weather) return;
+  req("GET", "/api/states/" + CONFIG.weather, null, function (j) {
+    if (j) { WX.st = j; renderWx(); }
+    setTimeout(loadWx, 5 * 60 * 1000);
+  });
+}
+function loadForecast() {
+  if (!CONFIG.weather) return;
+  req("POST", "/api/services/weather/get_forecasts?return_response", { entity_id: CONFIG.weather, type: "daily" }, function (j) {
+    var f = j && j.service_response && j.service_response[CONFIG.weather] && j.service_response[CONFIG.weather].forecast;
+    if (f && f.length) { WX.hi = f[0].temperature; WX.lo = f[0].templow; renderWx(); }
+    setTimeout(loadForecast, 30 * 60 * 1000);
+  });
+}
+function renderWx() {
+  var s = WX.st; if (!s || s.state === "unavailable" || s.state === "unknown") { $wx.className = "wx"; return; }
+  var a = s.attributes || {}, t = parseFloat(a.temperature), ic = ICON[ICON_OF[s.state] || "cloud"], z = WX_ICON;
+  var html = '<svg viewBox="0 0 24 24" width="' + z + '" height="' + z + '">' + ic + '</svg>&nbsp; ' +
+    '<span class="tp">' + (isFinite(t) ? Math.round(t) + "°" : "") + '</span>&nbsp; ' +
+    '<span class="cd">' + (COND[s.state] || s.state) + '</span>';
+  if (WX.hi != null && WX.lo != null) html += '<span class="hl">&nbsp;&nbsp;·&nbsp;&nbsp;' + Math.round(WX.hi) + "° / " + Math.round(WX.lo) + "°</span>";
+  $wx.innerHTML = html; $wx.className = "wx on";
+}
+
+build(); layout(); tick(false);
+loadWx(); loadForecast();
+// align ticks to the start of each second
+setTimeout(function () { tick(true); setInterval(function () { tick(true); }, 1000); }, 1000 - new Date().getMilliseconds());
+window.addEventListener("orientationchange", function () { setTimeout(layout, 150); }, false);
+window.addEventListener("resize", function () { setTimeout(layout, 80); }, false);
+document.addEventListener("touchmove", function (e) { e.preventDefault(); }, false);
+if (window.console) console.log("CleanFrame Flip Clock v" + VERSION);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+# Add these to your configuration.yaml (merge with existing `sensor:` / `shell_command:` keys if you have them),
+# then restart Home Assistant once.
+
+# Lists the pictures in /config/www/photos for photos.html (iOS 5 can't list folders itself).
+# /config/www is in allowlist_external_dirs by default, so nothing else is needed.
+sensor:
+  - platform: folder
+    folder: /config/www/photos
+    filter: "*"
+
+# Shrinks new photos for the 1st-gen iPad (see shell/resize_photos.py and automations.yaml).
+shell_command:
+  resize_photos: python3 /config/shell/resize_photos.py

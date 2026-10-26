@@ -1,0 +1,18 @@
+# Paste into automations.yaml (or create it in the UI: Settings → Automations & scenes → ⋮ → Edit in YAML).
+- id: cf_resize_photos
+  alias: CleanFrame – shrink frame photos
+  description: Scales pictures added to www/photos down to 1024 px for the 1st-gen iPad.
+  mode: single
+  triggers:
+    - trigger: state
+      entity_id: sensor.photos
+      attribute: file_list
+    - trigger: time_pattern
+      minutes: /5
+    - trigger: homeassistant
+      event: start
+  conditions: []
+  actions:
+    - action: shell_command.resize_photos
+      response_variable: r
+      continue_on_error: true
