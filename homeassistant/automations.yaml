@@ -1,7 +1,8 @@
-# Paste into automations.yaml (or create it in the UI: Settings → Automations & scenes → ⋮ → Edit in YAML).
-- id: cf_resize_photos
-  alias: CleanFrame – shrink frame photos
-  description: Scales pictures added to www/photos down to 1024 px for the 1st-gen iPad.
+# Paste into automations.yaml (or create them in the UI: Settings → Automations & scenes → ⋮ → Edit in YAML).
+
+# Shrinks pictures added to www/photos for the 1st-gen iPad, sorts them into albums and writes albums.json.
+- id: frame_resize_photos
+  alias: Frame – prepare photos
   mode: single
   triggers:
     - trigger: state
@@ -16,3 +17,56 @@
     - action: shell_command.resize_photos
       response_variable: r
       continue_on_error: true
+
+# Optional: Alexa timers on the frame, instantly.
+# The Alexa Devices integration's "next timer" sensors can lag by minutes, but its voice-event entity
+# reports Alexa's answer right away ("5 minutes, starting now" / "5 Minuten, ab jetzt").
+# This reads the duration from that answer and writes "end|duration ms|device" into input_text.frame_timer;
+# cancelling the timer clears it. Change the event entities to your Echo devices.
+- id: frame_alexa_timer
+  alias: Frame – Alexa timer
+  mode: queued
+  max_exceeded: silent
+  triggers:
+    - trigger: state
+      entity_id:
+        - event.living_room_echo_voice_event
+      not_from: [unavailable, unknown]
+      not_to: [unavailable, unknown]
+  conditions:
+    # only fresh voice commands (the integration repeats the last one after reconnecting)
+    - condition: template
+      value_template: >-
+        {% set a = trigger.to_state.attributes %}{% set b = trigger.from_state.attributes if trigger.from_state else {} %}
+        {{ trigger.from_state is not none and trigger.to_state.state != trigger.from_state.state
+           and (as_timestamp(now()) - as_timestamp(trigger.to_state.state, 0)) < 60
+           and not (a.voice_command == b.voice_command and a.voice_reply == b.voice_reply
+                    and (as_timestamp(trigger.to_state.state, 0) - as_timestamp(trigger.from_state.state, 0)) < 600) }}
+  actions:
+    - variables:
+        intent: "{{ trigger.to_state.attributes.intent or '' }}"
+        cmd: "{{ (trigger.to_state.attributes.voice_command or '') | lower }}"
+        secs: >-
+          {% set r = (trigger.to_state.attributes.voice_reply or '') %}{% set ns = namespace(s=0) %}
+          {% for m in r | regex_findall('(\d+)[\s-]*(stunden?|minuten?|sekunden?|hours?|minutes?|seconds?|saat|dakika|saniye)', ignorecase=True) %}
+          {% set k = m[1] | lower %}
+          {% set f = 1 if k.startswith('sek') or k.startswith('sec') or k == 'saniye' else (60 if k.startswith('min') or k == 'dakika' else 3600) %}
+          {% set ns.s = ns.s + (m[0] | int) * f %}
+          {% endfor %}{{ ns.s }}
+        dev: "{{ (trigger.to_state.attributes.friendly_name or '') | regex_replace(' (Voice event|Ses etkinliği|Sprachereignis)$', '') }}"
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ intent == 'RemoveNotificationIntent' or cmd is search('cancel|stop the timer|lösch|abbrech|iptal') }}"
+          sequence:
+            - action: input_text.set_value
+              target: { entity_id: input_text.frame_timer }
+              data: { value: "" }
+        - conditions:
+            - condition: template
+              value_template: "{{ (intent == 'SetNotificationIntent' or cmd is search('timer|zamanlay')) and secs | int > 0 }}"
+          sequence:
+            - action: input_text.set_value
+              target: { entity_id: input_text.frame_timer }
+              data:
+                value: "{{ (utcnow() + timedelta(seconds=secs | int)).isoformat(timespec='seconds') }}|{{ secs | int * 1000 }}|{{ dev }}"

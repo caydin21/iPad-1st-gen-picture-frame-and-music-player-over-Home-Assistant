@@ -1,20 +1,21 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <!--
-  CleanFrame Home — iPad (1. nesil, iOS 5.1.1)  v1.4.0
-  Saat, fotoğraf çerçevesi ve müzik çaları tek ekranda birleştirir; ekranı sağa/sola kaydırarak geçilir,
-  geçiş için hiçbir buton yok. Her ekran kendi dosyasından yüklenir (clock / photos / music),
-  o dosyalar ayrı ayrı da kullanılmaya devam eder.
-  - Music Assistant çalmaya başlayınca müzik ekranına kendiliğinden geçer; müzik durunca birkaç dakika sonra önceki ekrana döner.
-  - Robot süpürge ve çamaşır makinesi çalışırken hangi ekran açıksa üstünde ilerleme bilgisi görünür.
-  - Sunucudaki dosyalar değişince kendini yeniler (iPad'in önbelleğine takılmaz).
+  Home — iPad 1 (iOS 5.1.1)
+  Clock, photo frame and music player on one screen; swipe left/right to switch, there are no buttons for it.
+  Each screen is its own file (clock.html / photos.html / music.html), which also work on their own.
+  - Jumps to the music screen when Music Assistant starts playing; goes back a few minutes after it stops.
+  - Banners for a robot vacuum, a washing machine and Alexa timers appear on top of whatever screen is showing.
+  - Optional: pick the screen from HA (input_select, two-way), reload the iPad from HA (input_button),
+    a once-a-minute status line in HA (input_text), and a night blackout.
+  - Reloads itself when the files on the server change (so the iPad's cache never gets in the way).
 -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<title>Ev</title>
+<title>Home</title>
 <style>
 html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#e8ecee;
  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
@@ -45,26 +46,42 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#
 .bn.warn svg{stroke:#ffcc80}.bn.warn .bar i{background:#ffcc80}
 .bn.done svg{stroke:#81c784}.bn.done .bar i{background:#81c784}
 .bn.nobar .bar{display:none}
+
+/* night: black cover over everything; a tap lifts it for a minute */
+.night{position:absolute;top:0;left:0;right:0;bottom:0;background:#000;display:none;opacity:0;-webkit-transition:opacity 2s}
+.night.vis{display:block}
+.night.on{opacity:1}
 </style>
 </head>
 <body>
 <div class="track"></div>
 <div class="dots"></div>
 <div class="stack"></div>
+<div class="night"></div>
 <script>
 (function () {
 "use strict";
 
-/* ======================= AYARLAR ======================= */
+/* ======================= SETTINGS ======================= */
 var CONFIG = {
   token: "",
-  // ekranlar, soldan sağa
+  // screens, left to right
   pages: ["clock.html", "photos.html", "music.html"],
-  musicPage: 2,                                   // müzik çalınca geçilecek ekran
-  musicBackAfter: 180,                            // müzik durduktan kaç saniye sonra önceki ekrana dönülsün (0 = dönme)
-  player: "media_player.living_room_speaker",         // Music Assistant oynatıcısı
+  musicPage: 2,                                   // screen to jump to when music starts
+  musicBackAfter: 180,                            // seconds after the music stops to go back (0 = stay)
+  musicBackTo: 1,                                 // screen to go back to if the previous one isn't known (1 = photos)
+  screenSelect: null,                             // pick the screen from HA (two-way), e.g.
+  // screenSelect: { entity: "input_select.frame_screen", options: ["Clock", "Photos", "Music"] },   // options in the order of pages
+  night: null,                                    // night blackout, e.g.
+  // night: { from: "23:00", to: "07:00", wake: 60, keepOnIf: ["light.living_room"] },   // tap = on for "wake" seconds; stays on while a light is on
+  reloadButton: "",                               // input_button in HA that reloads the iPad, e.g. "input_button.frame_reload"
+  status: "",                                     // input_text the iPad writes a status line into every minute, e.g. "input_text.frame_status"
+  // Alexa timers: the input_text filled by the automation in homeassistant/automations.yaml (instant) and/or
+  // the "next timer" sensors of the Alexa Devices integration (these can lag by minutes). [] = off
+  timers: [],                                     // e.g. ["input_text.frame_timer", "sensor.echo_dot_next_timer"]
+  player: "media_player.living_room_speaker",     // Music Assistant player
   vacuum: "vacuum.robot",
-  vacSensors: {                                   // robotun yanındaki sensörler (boş bırakılabilir)
+  vacSensors: {                                   // sensors next to the robot (any can be left empty)
     progress: "sensor.robot_cleaning_progress",
     area: "sensor.robot_cleaning_area",
     time: "sensor.robot_cleaning_time",
@@ -72,8 +89,8 @@ var CONFIG = {
     room: "sensor.robot_current_room",
     error: "sensor.robot_error"
   },
-  washer: {                                       // çamaşır makinesi (Home Connect Local); boş bırakılırsa gösterilmez
-    name: "",                                     // görünen ad (boşsa "Çamaşır makinesi" / "Washer")
+  washer: {                                       // washing machine (Home Connect Local); leave state empty to hide
+    name: "",                                     // shown name (empty = "Washer" / "Çamaşır makinesi")
     state: "sensor.washer_operation_state",
     progress: "sensor.washer_program_progress",
     finish: "sensor.washer_program_finish_time",
@@ -85,9 +102,9 @@ var CONFIG = {
   lang: "auto",                                   // "auto" | "tr" | "en"
   haUrl: ""
 };
-/* ======================================================= */
+/* ======================================================== */
 
-var VERSION = "1.4.0";
+var VERSION = "2.0.0";
 // UI language: "auto" follows the iPad's language (Turkish if it is set to Turkish, otherwise English)
 var LANG = (CONFIG.lang === "tr" || CONFIG.lang === "en") ? CONFIG.lang : (/^tr/i.test(navigator.language || "") ? "tr" : "en");
 var L10N = {
@@ -98,6 +115,7 @@ var L10N = {
     action: "{n}: müdahale gerekiyor", werror: "{n}: hata", aborting: "{n}: program iptal ediliyor", ready: "Çamaşırlar hazır",
     doorOpen: "Kapı açık", takeOut: "Kapıyı açıp çamaşırları alabilirsiniz", left: "{v} kaldı", ends: "Bitiş {v}",
     cold: "Soğuk", rpm: "{v} dev/dk", noSpin: "Sıkmasız",
+    timer: "Zamanlayıcı", timerDone: "Zamanlayıcı bitti", screens: ["Saat", "Fotoğraflar", "Müzik"],
     prog: { cotton: "Pamuklu", cotton_eco_4060: "Eco 40-60", easy_care: "Sentetik", mix: "Karışık", wool: "Yünlü",
       delicates_silk: "Narin / İpek", shirts_blouses: "Gömlek / Bluz", sport_fitness: "Spor", sport_shoes: "Spor ayakkabı",
       dark_wash: "Koyu renkler", outdoor: "Outdoor", curtains: "Perde", super_153045_super_15: "Hızlı 15'",
@@ -112,6 +130,7 @@ var L10N = {
     action: "{n}: action required", werror: "{n}: error", aborting: "{n}: aborting program", ready: "Laundry is ready",
     doorOpen: "Door is open", takeOut: "Open the door and take the laundry out", left: "{v} left", ends: "Ends {v}",
     cold: "Cold", rpm: "{v} rpm", noSpin: "No spin",
+    timer: "Timer", timerDone: "Timer done", screens: ["Clock", "Photos", "Music"],
     prog: { cotton: "Cotton", cotton_eco_4060: "Eco 40-60", easy_care: "Easy care", mix: "Mix", wool: "Wool",
       delicates_silk: "Delicates / Silk", shirts_blouses: "Shirts / Blouses", sport_fitness: "Sportswear", sport_shoes: "Trainers",
       dark_wash: "Dark wash", outdoor: "Outdoor", curtains: "Curtains", super_153045_super_15: "Super quick 15'",
@@ -122,6 +141,8 @@ var L10N = {
 };
 var T = L10N[LANG];
 function tt(key, n, v) { return T[key].replace("{n}", n).replace("{v}", v); }
+var LAST_ERR = "";
+window.onerror = function (msg, url, line) { LAST_ERR = String(msg).slice(0, 80) + " @" + line; };
 var PAGES = CONFIG.pages;
 
 function sget(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
@@ -136,7 +157,7 @@ function tglC(el, c, on) {
 
 var track = document.querySelector(".track"), dots = document.querySelector(".dots");
 var panes = [], frames = [], W = 0, H = 0;
-var idx = parseInt(sget("cfHomeIdx2"), 10);
+var idx = parseInt(sget("frameScreen"), 10);
 if (!(idx >= 0 && idx < PAGES.length)) idx = 0;
 
 /* ---------------- build ---------------- */
@@ -178,9 +199,9 @@ function go(n) {
   var changed = n !== idx;
   if (changed && n === CONFIG.musicPage) backIdx = idx;
   if (changed && n !== CONFIG.musicPage) { backIdx = null; clearTimeout(backT); backT = 0; }
-  idx = n; sset("cfHomeIdx2", String(idx));
+  idx = n; sset("frameScreen", String(idx));
   place(0, true);
-  if (changed) showDots();
+  if (changed) { showDots(); reportScreen(); }
 }
 
 /* ---------------- swipe ----------------
@@ -191,8 +212,8 @@ var g = null;
 function hook(f) {
   var doc;
   try { doc = f.contentDocument || f.contentWindow.document; } catch (e) { return; }
-  if (!doc || doc._cfHooked) return;
-  doc._cfHooked = true;
+  if (!doc || doc._frameHooked) return;
+  doc._frameHooked = true;
   doc.addEventListener("touchstart", function (e) {
     if (e.touches.length !== 1) { g = null; return; }
     var t = e.touches[0];
@@ -228,7 +249,7 @@ function hook(f) {
 
 /* ---------------- Home Assistant ---------------- */
 var BASE = String(CONFIG.haUrl || "").replace(/\/+$/, "");
-function token() { return sget("cfToken") || String(CONFIG.token || "").replace(/\s+/g, ""); }
+function token() { return sget("frameToken") || String(CONFIG.token || "").replace(/\s+/g, ""); }
 function state(id, cb) {
   var x = new XMLHttpRequest(), done = false;
   var to = setTimeout(function () { if (done) return; done = true; try { x.abort(); } catch (e) { /* */ } cb(null); }, 10000);
@@ -236,7 +257,7 @@ function state(id, cb) {
     if (x.readyState !== 4 || done) return;
     done = true; clearTimeout(to);
     var j = null;
-    if (x.status === 200) { try { j = JSON.parse(x.responseText); } catch (e) { /* */ } }
+    if (x.status === 200) { try { j = JSON.parse(x.responseText); } catch (e) { /* */ } readSkew(x); }
     cb(j);
   };
   x.open("GET", BASE + "/api/states/" + id + "?_=" + ms(), true);
@@ -251,11 +272,11 @@ function pollPlayer() {
   state(CONFIG.player, function (j) {
     var s = j ? j.state : null;
     if (lastPlayer !== null && s === "playing" && lastPlayer !== "playing" && idx !== CONFIG.musicPage && !g) go(CONFIG.musicPage);
-    if (s === "playing") { clearTimeout(backT); backT = 0; }
-    else if (s && idx === CONFIG.musicPage && backIdx !== null && !backT && CONFIG.musicBackAfter > 0) {
+    if (s === "playing") { clearTimeout(backT); backT = 0; manualMusic = false; }
+    else if (s && idx === CONFIG.musicPage && !backT && !manualMusic && CONFIG.musicBackAfter > 0) {
       backT = setTimeout(function () {
         backT = 0;
-        if (idx === CONFIG.musicPage && backIdx !== null && lastPlayer !== "playing" && !g) go(backIdx);
+        if (idx === CONFIG.musicPage && lastPlayer !== "playing" && !g) go(backIdx !== null ? backIdx : CONFIG.musicBackTo);
       }, CONFIG.musicBackAfter * 1000);
     }
     if (s) lastPlayer = s;
@@ -281,25 +302,51 @@ function bnShow(b, title, sub, pct, kind) {
   tglC(b.el, "err", kind === "err"); tglC(b.el, "warn", kind === "warn"); tglC(b.el, "done", kind === "done");
   if (!hasC(b.el, "vis")) { tglC(b.el, "vis", true); void b.el.offsetWidth; }
   tglC(b.el, "on", true);
+  syncDate();
 }
 function bnHide(b) {
   if (!hasC(b.el, "on")) return;
   tglC(b.el, "on", false);
+  syncDate();
   b.hideT = setTimeout(function () { b.hideT = 0; tglC(b.el, "vis", false); }, 550);
 }
+// while a banner is up, hide the date at the top of the clock screen (they would overlap)
+function syncDate() {
+  var up = false, list = $stack.childNodes, i;
+  for (i = 0; i < list.length; i++) if (hasC(list[i], "on")) up = true;
+  for (i = 0; i < frames.length; i++) {
+    if (!/clock/.test(PAGES[i])) continue;
+    try {
+      var d = frames[i].contentDocument && frames[i].contentDocument.querySelector(".date");
+      if (!d) continue;
+      d.style.webkitTransition = "opacity .5s";
+      d.style.opacity = up ? "0" : "";
+    } catch (e) { /* not loaded yet */ }
+  }
+}
+setInterval(syncDate, 2000);
 function num(v) { var n = parseFloat(v); return isFinite(n) ? n : null; }
 function dur(sec) {
   if (sec == null) return "";
   var m = Math.round(sec / 60);
   return m < 60 ? m + " " + T.min : Math.floor(m / 60) + " " + T.hr + " " + (m % 60) + " " + T.min;
 }
-// Safari 5 can't parse "2026-10-26T10:20:00+00:00"
+/* The iPad's own clock may be off from the real time even when its screen shows the right hour
+   (iOS 5 has outdated time-zone rules for some countries, so the clock gets set "wrong" to look right).
+   We learn the difference from the Date header of HA's replies and move every time HA sends us
+   onto the iPad's clock, so countdowns and "ends at" times come out right. */
+var SKEW = 0;   // HA time - iPad time, ms
+function readSkew(x) {
+  var d = x.getResponseHeader("Date"), sd = d ? Date.parse(d) : NaN;
+  if (isFinite(sd)) { var k = sd + 500 - new Date().getTime(); if (Math.abs(k - SKEW) > 2000) SKEW = k; }
+}
+// Safari 5 can't parse "2026-10-26T10:20:00+00:00"; result is on the iPad's clock (see SKEW)
 function parseISO(s) {
   var m = /^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?(Z|([+\-])(\d\d):?(\d\d))?$/.exec(s || "");
   if (!m) return NaN;
   var t = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
   if (m[8]) { var off = (+m[9] * 60 + (+m[10])) * 60000; t += (m[8] === "+" ? -off : off); }
-  return t;
+  return t - SKEW;
 }
 function hhmm(t) { var d = new Date(t), h = d.getHours(), m = d.getMinutes(); return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m; }
 // read several entities; map key -> state (null when missing/unavailable)
@@ -418,6 +465,89 @@ function showWasher(s, I) {
   }
   bnShow(washB, title, sub.join("  ·  "), s === "finished" ? 100 : (s === "delayedstart" ? null : p), kind);
 }
+/* Alexa timers (Alexa Media Player "next timer" sensors): a banner counting down to the end */
+var timB = banner('<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 1.5M10 3h4M12 3v3M18.5 6.5l1.2-1.2"/>');
+var TM = { end: 0, id: "", total: 0, name: "", label: "", tick: 0, doneT: 0, cancelled: [] };
+function mmss(sec) {
+  sec = Math.max(0, Math.round(sec));
+  var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), x = sec % 60;
+  return (h ? h + ":" + (m < 10 ? "0" : "") : "") + m + ":" + (x < 10 ? "0" : "") + x;
+}
+// details of the first active timer from the sensor's attributes (format varies between versions)
+function timerInfo(a, end) {
+  var out = { total: 0, label: "" }, list = a && (a.sorted_active || a.sorted_all);
+  if (typeof list === "string") { try { list = JSON.parse(list); } catch (e) { list = null; } }
+  if (!list || !list.length) return out;
+  for (var i = 0; i < list.length; i++) {
+    var t = list[i] && list[i].length === 2 ? list[i][1] : list[i];
+    if (!t || (t.status && t.status !== "ON")) continue;
+    out.total = +t.originalDurationInMillis || 0;
+    out.label = t.timerLabel || "";
+    break;
+  }
+  return out;
+}
+function pollTimers() {
+  var ids = CONFIG.timers || [], left = ids.length, cands = [], gone = false;
+  if (!left) return;
+  for (var i = 0; i < ids.length; i++) (function (id) {
+    state(id, function (j) {
+      var parts = j && j.state ? String(j.state).split("|") : [], t = parts.length ? parseISO(parts[0]) : NaN;
+      // the entity that holds our timer now answers with something else -> the timer was cancelled.
+      // ("unavailable" doesn't count: the Alexa sensors drop out for a few seconds whenever the link to Amazon hiccups)
+      if (TM.tick && id === TM.id && j && j.state !== "unavailable" && j.state !== "unknown" && t !== TM.end) gone = true;
+      if (isFinite(t) && t > ms() - 2000) cands.push({ t: t, j: j, id: id, parts: parts });
+      if (--left) return;
+      if (gone && TM.end - ms() > 3000) TM.cancelled.push(TM.end);   // remember it: the slow Alexa sensor may still show it
+      var best = null, k, c, n;
+      for (k = 0; k < cands.length; k++) {
+        c = cands[k];
+        for (n = 0; n < TM.cancelled.length; n++) if (Math.abs(c.t - TM.cancelled[n]) < 15000) c = null;
+        if (c && (!best || c.t < best.t - 5000)) best = c;
+      }
+      if (best) {
+        var a = best.j.attributes || {}, info = timerInfo(a, best.t);
+        if (best.parts.length > 1) { info.total = +best.parts[1] || 0; a = { friendly_name: best.parts[2] || "" }; }
+        clearTimeout(TM.doneT); TM.doneT = 0;
+        TM.end = best.t; TM.id = best.id; TM.total = info.total; TM.label = info.label;
+        TM.name = String(a.friendly_name || "").replace(/\s*(Bir sonraki zamanlay\u0131c\u0131|Next timer|Nächster Timer)\s*$/i, "");
+        if (!TM.tick) { TM.tick = setInterval(timerTick, 1000); timerTick(); }
+      } else if (gone && TM.tick) {   // cancelled before the end
+        clearInterval(TM.tick); TM.tick = 0; TM.end = 0; bnHide(timB);
+      }
+      while (TM.cancelled.length > 5) TM.cancelled.shift();
+      setTimeout(pollTimers, TM.tick ? 5000 : 8000);
+    });
+  })(ids[i]);
+}
+function timerTick() {
+  var left = (TM.end - ms()) / 1000;
+  if (left <= 0) {
+    clearInterval(TM.tick); TM.tick = 0;
+    bnShow(timB, T.timerDone + (TM.label ? " · " + TM.label : ""), TM.name, 100, "done");
+    clearTimeout(TM.doneT); TM.doneT = setTimeout(function () { TM.doneT = 0; bnHide(timB); }, 60000);
+    return;
+  }
+  var sub = [tt("ends", "", hhmm(TM.end))]; if (TM.name) sub.push(TM.name);
+  var pct = TM.total > 0 ? 100 * (1 - left * 1000 / TM.total) : null;
+  bnShow(timB, T.timer + (TM.label ? " · " + TM.label : "") + "  " + mmss(left), sub.join("  ·  "), pct, "");
+}
+
+/* heartbeat: once a minute the iPad writes a short status line into an input_text in HA,
+   so you can see from HA that the frame is alive and what it is showing */
+function pad2(n) { return (n < 10 ? "0" : "") + n; }
+function heartbeat() {
+  if (CONFIG.status && token()) {
+    var d = new Date(), names = T.screens;
+    var line = "v" + VERSION + " · " + pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds()) +
+      " · " + (names[idx] || idx) + (TM.tick ? " · timer " + mmss((TM.end - ms()) / 1000) : "") +
+      (SKEW ? " · clock offset " + Math.round(SKEW / 60000) + " min" : "") + (LAST_ERR ? " · error: " + LAST_ERR : "");
+    svc("input_text", "set_value", { entity_id: CONFIG.status, value: line.slice(0, 250) });
+  }
+  setTimeout(heartbeat, 60000);
+}
+setTimeout(heartbeat, 6000);
+
 function sizeStack() { var w = Math.min(476, W - 40); $stack.style.width = w + "px"; $stack.style.marginLeft = (-w / 2) + "px"; }
 
 /* ---------------- start ---------------- */
@@ -431,7 +561,7 @@ setTimeout(function () {
   for (var i = 0; i < frames.length; i++) if (i !== idx) frames[i].src = PAGES[i] + "?v=" + stamp;
 }, 1500);
 showDots();
-if (token()) { setTimeout(pollPlayer, 2000); setTimeout(pollVacuum, 3000); setTimeout(pollWasher, 4000); }
+if (token()) { setTimeout(pollPlayer, 2000); setTimeout(pollVacuum, 3000); setTimeout(pollWasher, 4000); setTimeout(pollTimers, 5000); }
 
 /* ---------------- self-update ----------------
    HA serves /local files with a 31-day cache, so an old copy of this page can keep coming back
@@ -462,7 +592,99 @@ function checkUpdates() {
 }
 setTimeout(checkUpdates, 10000);
 setInterval(checkUpdates, 5 * 60 * 1000);
-if (window.console) console.log("CleanFrame Home v" + VERSION);
+
+/* ---------------- night mode ---------------- */
+var $night = document.querySelector(".night"), wakeUntil = 0, nightOn = false, lightsOn = false;
+function mins(hm) { var p = String(hm || "").split(":"); return (+p[0] || 0) * 60 + (+p[1] || 0); }
+function isNight() {
+  var N = CONFIG.night; if (!N) return false;
+  var d = new Date(), m = d.getHours() * 60 + d.getMinutes(), a = mins(N.from), b = mins(N.to);
+  return a <= b ? (m >= a && m < b) : (m >= a || m < b);   // the range may cross midnight
+}
+function nightTick() {
+  var want = isNight() && !lightsOn && ms() > wakeUntil;
+  if (want === nightOn) return;
+  nightOn = want;
+  if (want) { tglC($night, "vis", true); void $night.offsetWidth; tglC($night, "on", true); }
+  else { tglC($night, "on", false); setTimeout(function () { if (!nightOn) tglC($night, "vis", false); }, 2100); }
+}
+// while dark, a tap shows the screen again for a while (the tap itself doesn't reach the page below)
+function wake(e) { if (e) e.preventDefault(); wakeUntil = ms() + ((CONFIG.night && CONFIG.night.wake) || 60) * 1000; nightTick(); }
+$night.addEventListener("touchstart", wake, false);
+$night.addEventListener("click", wake, false);
+// lights in the room keep the screen on (checked every 20 s, only during the night hours)
+function pollLights() {
+  var ids = (CONFIG.night && CONFIG.night.keepOnIf) || [], left = ids.length, any = false;
+  if (!left || !isNight() || !token()) { if (lightsOn) { lightsOn = false; nightTick(); } setTimeout(pollLights, 20000); return; }
+  for (var i = 0; i < ids.length; i++) (function (id) {
+    state(id, function (j) {
+      if (j && j.state === "on") any = true;
+      if (--left === 0) {
+        if (any !== lightsOn) { lightsOn = any; nightTick(); }
+        setTimeout(pollLights, 20000);
+      }
+    });
+  })(ids[i]);
+}
+nightTick();
+setInterval(nightTick, 15000);
+pollLights();
+
+/* ---------------- screen choice from Home Assistant ----------------
+   the screenSelect input_select mirrors the screen shown here: picking an option in HA switches
+   the iPad (and lights up the screen at night for a while); swiping or an automatic switch
+   on the iPad writes the new screen back to HA. */
+var selSeen = null, selSetAt = 0, manualMusic = false;
+function svc(domain, service, data) {
+  var x = new XMLHttpRequest();
+  x.open("POST", BASE + "/api/services/" + domain + "/" + service, true);
+  x.setRequestHeader("Authorization", "Bearer " + token());
+  x.setRequestHeader("Content-Type", "application/json");
+  x.send(JSON.stringify(data));
+}
+function reportScreen() {
+  var S = CONFIG.screenSelect; if (!S || !token()) return;
+  var opt = S.options[idx]; if (!opt || opt === selSeen) return;
+  selSeen = opt; selSetAt = ms();
+  svc("input_select", "select_option", { entity_id: S.entity, option: opt });
+}
+function pollSelect() {
+  var S = CONFIG.screenSelect; if (!S || !token()) return;
+  state(S.entity, function (j) {
+    if (j && j.state) {
+      var s = j.state, k = -1, i;
+      for (i = 0; i < S.options.length; i++) if (S.options[i] === s) k = i;
+      if (selSeen === null) { selSeen = s; if (k !== idx) { selSeen = null; reportScreen(); } }   // first look: HA follows the iPad
+      else if (s !== selSeen && ms() - selSetAt > 2500) {
+        selSeen = s;
+        if (k >= 0 && k !== idx && !g) {
+          manualMusic = k === CONFIG.musicPage;   // chosen by hand: don't bounce back while nothing plays
+          go(k);
+          if (nightOn) wake();
+        }
+      }
+    }
+    setTimeout(pollSelect, 2000);
+  });
+}
+setTimeout(pollSelect, 2500);
+
+/* ---------------- remote reload ----------------
+   Pressing the input_button in HA changes its state (the time of the press);
+   when we see it change, the whole app reloads with fresh copies of every page. */
+var reloadSeen = null;
+function pollReload() {
+  var id = CONFIG.reloadButton; if (!id || !token()) return;
+  state(id, function (j) {
+    if (j && j.state) {
+      if (reloadSeen === null) reloadSeen = j.state;
+      else if (j.state !== reloadSeen) { fresh(); return; }
+    }
+    setTimeout(pollReload, 4000);
+  });
+}
+setTimeout(pollReload, 3000);
+if (window.console) console.log("Home v" + VERSION);
 })();
 </script>
 </body>

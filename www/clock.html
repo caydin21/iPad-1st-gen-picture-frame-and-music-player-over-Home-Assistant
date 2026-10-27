@@ -1,22 +1,26 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <!--
-  CleanFrame Flip Clock — iPad (1. nesil, iOS 5.1.1)  v1.1.0
-  Klasik çevirmeli (flip) saat: saat ve dakika kartları değişirken ortadan katlanarak döner.
-  Uses the iPad's own clock; shows the weather from Home Assistant underneath (the clock keeps running without it).
+  Flip clock — iPad 1 (iOS 5.1.1)
+  The hour and minute cards fold over in the middle when they change. Below: date, a room temperature,
+  the weather, sunrise/sunset with a rain warning, and the coming days, all from Home Assistant
+  (the clock keeps running without a connection). ES5 only + HA REST API.
 -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<title>Saat</title>
+<title>Clock</title>
 <style>
 html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#e9e9e6;
  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;-webkit-text-size-adjust:none;
  -webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:rgba(0,0,0,0)}
 #clock{position:absolute;left:50%;top:50%;white-space:nowrap;font-size:0}
 .grp{display:inline-block;vertical-align:top}
+/* the colon between hours and minutes: two small rounded squares in the digit colour */
+.col{display:inline-block;vertical-align:top;position:relative}
+.col i{position:absolute;left:50%;background:#e9e9e6;opacity:.85}
 .card{position:relative;display:inline-block;vertical-align:top;-webkit-perspective:1200px}
 .half,.leaf{position:absolute;left:0;right:0;height:50%;overflow:hidden;
  background:#1d1d1f;background:-webkit-linear-gradient(top,#262628,#1a1a1c)}
@@ -48,7 +52,7 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#
 @-webkit-keyframes sh-bot{0%{opacity:0}50%{opacity:.35}100%{opacity:0}}
 .date{position:absolute;left:0;right:0;text-align:center;color:#8d8d90;letter-spacing:1px;
  font-family:"HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif}
-.sec{position:absolute;left:0;right:0;height:4px}
+.sec{position:absolute;left:0;right:0;height:4px;display:none}   /* seconds bar under the clock: turned off */
 .sec i{display:block;height:4px;width:0;margin:0 auto;border-radius:2px;background:#3a3a3d;-webkit-transition:width 1s linear}
 .wx{position:absolute;left:0;right:0;text-align:center;color:#c9c9c6;white-space:nowrap;opacity:0;-webkit-transition:opacity .8s;
  font-family:"HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif}
@@ -56,6 +60,26 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#
 .wx svg{display:inline-block;vertical-align:middle;stroke:#c9c9c6;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .wx .tp{font-family:"HelveticaNeue-Medium","Helvetica Neue",Helvetica,Arial,sans-serif;color:#e9e9e6;vertical-align:middle}
 .wx .cd,.wx .hl{vertical-align:middle;color:#8d8d90}
+.rm{position:absolute;left:0;right:0;text-align:center;color:#8d8d90;white-space:nowrap;opacity:0;-webkit-transition:opacity .8s;
+ font-family:"HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif}
+.rm.on{opacity:1}
+.sn{position:absolute;left:0;right:0;text-align:center;color:#8d8d90;white-space:nowrap;opacity:0;-webkit-transition:opacity .8s;
+ font-family:"HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif}
+.sn.on{opacity:1}
+.sn b{font-weight:normal;color:#c9c9c6}
+.sn .rn{color:#e9e9e6}
+.sn svg{display:inline-block;vertical-align:middle;stroke:#8d8d90;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.sn .rn svg{stroke:#e9e9e6}
+.fc{position:absolute;left:50%;white-space:nowrap;font-size:0;opacity:0;-webkit-transition:opacity .8s;
+ font-family:"HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif}
+.fc.on{opacity:1}
+.fc .d{display:inline-block;vertical-align:top;text-align:center;color:#8d8d90}
+.fc .d + .d{border-left:1px solid #222}
+.fc .n{display:block;letter-spacing:1px}
+.fc svg{display:block;margin:0 auto;stroke:#c9c9c6;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.fc .h{color:#e9e9e6;font-family:"HelveticaNeue-Medium","Helvetica Neue",Helvetica,Arial,sans-serif}
+.rm b{font-weight:normal;color:#e9e9e6;font-family:"HelveticaNeue-Medium","Helvetica Neue",Helvetica,Arial,sans-serif}
+.rm svg{display:inline-block;vertical-align:middle;stroke:#8d8d90;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 </style>
 </head>
 <body>
@@ -63,14 +87,23 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#
 <div class="sec"><i></i></div>
 <div class="date"></div>
 <div class="wx"></div>
+<div class="rm"></div>
+<div class="sn"></div>
+<div class="fc"></div>
 <script>
 (function () {
 "use strict";
-var VERSION = "1.1.0";
+var VERSION = "2.0.0";
 var CONFIG = {
-  token: "",
-  weather: "weather.home",   // leave empty to hide the weather
-  lang: "auto",              // "auto" | "tr" | "en"
+  token: "",                       // long-lived access token (or paste it once on the iPad's setup screen of another page)
+  weather: "weather.home",         // current weather + today's high/low; leave empty to hide
+  room: "",                        // a room temperature sensor shown above the weather, e.g. "sensor.living_room_temperature"
+  roomLabel: "Living room",
+  days: 7,                         // how many days of forecast in the row at the bottom (0 = hide)
+  daysWeather: "",                 // weather entity for that row and the rain warning (e.g. Open-Meteo, 7 days); empty = "weather"
+  sun: "sun.sun",                  // sunrise / sunset (empty = hide)
+  rain: true,                      // warn when rain or snow is expected in the next 12 hours
+  lang: "auto",                    // "auto" | "tr" | "en"
   haUrl: ""
 };
 
@@ -79,22 +112,33 @@ var LANG = (CONFIG.lang === "tr" || CONFIG.lang === "en") ? CONFIG.lang : (/^tr/
 var L10N = {
   tr: {
     days: ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"],
+    daysShort: ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"],
     months: ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"],
     cond: { "clear-night": "Açık", cloudy: "Bulutlu", exceptional: "Olağanüstü", fog: "Sisli", hail: "Dolu",
       lightning: "Şimşekli", "lightning-rainy": "Gök gürültülü sağanak", partlycloudy: "Parçalı bulutlu",
       pouring: "Sağanak", rainy: "Yağmurlu", snowy: "Karlı", "snowy-rainy": "Karla karışık yağmur",
-      sunny: "Güneşli", windy: "Rüzgârlı", "windy-variant": "Rüzgârlı, bulutlu" }
+      sunny: "Güneşli", windy: "Rüzgârlı", "windy-variant": "Rüzgârlı, bulutlu" },
+    dec: ",",
+    rainStops: function (what, t) { return (what === "s" ? "Kar" : "Yağmur") + " " + t + " civarı diniyor"; },
+    rainGoesOn: function (what) { return (what === "s" ? "Kar" : "Yağmur") + " devam edecek"; },
+    rainAt: function (what, t) { return t + " civarı " + (what === "s" ? "kar" : "yağmur") + " bekleniyor"; }
   },
   en: {
     days: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+    daysShort: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
     months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
     cond: { "clear-night": "Clear", cloudy: "Cloudy", exceptional: "Exceptional", fog: "Fog", hail: "Hail",
       lightning: "Lightning", "lightning-rainy": "Thunderstorm", partlycloudy: "Partly cloudy",
       pouring: "Pouring", rainy: "Rain", snowy: "Snow", "snowy-rainy": "Sleet",
-      sunny: "Sunny", windy: "Windy", "windy-variant": "Windy, cloudy" }
+      sunny: "Sunny", windy: "Windy", "windy-variant": "Windy, cloudy" },
+    dec: ".",
+    rainStops: function (what, t) { return (what === "s" ? "Snow" : "Rain") + " stops around " + t; },
+    rainGoesOn: function (what) { return (what === "s" ? "Snow" : "Rain") + " for the next hours"; },
+    rainAt: function (what, t) { return (what === "s" ? "Snow" : "Rain") + " expected around " + t; }
   }
 };
 var T = L10N[LANG];
+var DAYS = T.days, MONTHS = T.months;
 
 var clock = document.getElementById("clock"), $date = document.querySelector(".date");
 var $sec = document.querySelector(".sec"), $seci = document.querySelector(".sec i");
@@ -115,14 +159,20 @@ function build() {
   var g1 = document.createElement("div"), g2 = document.createElement("div");
   g1.className = g2.className = "grp";
   for (var i = 0; i < 4; i++) { var c = card(); cards.push(c); (i < 2 ? g1 : g2).appendChild(c.el); }
-  clock.appendChild(g1); clock.appendChild(g2);
+  var col = document.createElement("div"); col.className = "col"; col.innerHTML = "<i></i><i></i>";
+  clock.appendChild(g1); clock.appendChild(col); clock.appendChild(g2);
 }
 
 /* ---------------- sizing ---------------- */
 function layout() {
   var W = window.innerWidth, H = window.innerHeight, port = H > W;
   // card width cw, height ch; 4 cards + small gaps + bigger gap between hours and minutes
-  var cw = Math.floor(Math.min((W - 120) / (4 + 0.07 * 8 + 0.5), (H * (port ? 0.42 : 0.6)) / 1.42));
+  // stack, top to bottom: date, clock, room temperature, weather, the coming days
+  // heights in card widths (cw); the gaps between them grow to fill the screen
+  var DH = 0.4, RH = 0.3, WH = 0.36, FH = CONFIG.days ? 0.85 : 0, SNH = 0.26, SNG = 0.14;   // SN: sun / rain line under the weather
+  var cont = DH + 1.42 + RH + WH + SNG + SNH + FH, gmin = [0.25, 0.3, 0.12, FH ? 0.35 : 0], gw = [1, 1.1, 0.6, FH ? 1.5 : 0];
+  var cw = Math.floor(Math.min((W - (port ? 80 : 120)) / (4 + 0.07 * 8 + 0.5), (H * (port ? 0.42 : 0.6)) / 1.42));
+  cw = Math.min(cw, Math.floor((H - 40) / (cont + gmin[0] + gmin[1] + gmin[2] + gmin[3])));
   var ch = Math.round(cw * 1.42), gap = Math.round(cw * 0.07), mid = Math.round(cw * 0.5), r = Math.round(cw * 0.08);
   for (var i = 0; i < cards.length; i++) {
     var c = cards[i], st = c.el.style;
@@ -136,18 +186,39 @@ function layout() {
     var halves = c.el.querySelectorAll(".half,.leaf");
     for (var h = 0; h < halves.length; h++) halves[h].style.borderRadius = r + "px";
   }
-  clock.firstChild.style.marginRight = mid + "px";
+  var col = clock.childNodes[1], dz = Math.round(cw * 0.15), dots = col.childNodes;
+  col.style.width = mid + "px"; col.style.height = ch + "px";
+  for (var di = 0; di < 2; di++) {
+    var ds = dots[di].style;
+    ds.width = ds.height = dz + "px"; ds.marginLeft = (-dz / 2) + "px"; ds.borderRadius = Math.round(dz * 0.25) + "px";
+    ds.top = Math.round(ch * (di ? 0.66 : 0.34) - dz / 2) + "px";
+  }
   var tw = clock.offsetWidth, th = ch;
   clock.style.marginLeft = (-tw / 2) + "px";
-  clock.style.marginTop = (-th / 2 - Math.round(ch * 0.08)) + "px";
-  $date.style.fontSize = Math.round(cw * 0.2) + "px";
-  $date.style.top = Math.round(H / 2 + th / 2 + ch * 0.08) + "px";
-  $sec.style.top = Math.round(H / 2 + th / 2 + ch * 0.02) + "px";
+  var free = H * 0.86 - cont * cw, sw = gw[0] + gw[1] + gw[2] + gw[3], g = [], tot = cont * cw, k2;
+  for (k2 = 0; k2 < 4; k2++) { g[k2] = Math.max(gmin[k2] * cw, free * gw[k2] / sw); tot += g[k2]; }
+  var y = Math.max(10, (H - tot) / 2);
+  $date.style.fontSize = Math.round(cw * 0.32) + "px";
+  $date.style.top = Math.round(y) + "px";
+  y += DH * cw + g[0];
+  clock.style.marginTop = "0"; clock.style.top = Math.round(y) + "px";
+  $sec.style.top = Math.round(y + th + ch * 0.02) + "px";
   $seci.style.maxWidth = tw + "px";
   S_TW = tw;
+  y += th + g[1];
+  $rm.style.fontSize = Math.round(cw * 0.2) + "px";
+  $rm.style.top = Math.round(y) + "px";
+  y += RH * cw + g[2];
+  WX_ICON = Math.round(cw * 0.34);   // same size as the icons in the week row
   $wx.style.fontSize = Math.round(cw * 0.2) + "px";
-  $wx.style.top = Math.round(H / 2 + th / 2 + ch * 0.08 + cw * 0.42) + "px";
-  WX_ICON = Math.round(cw * 0.3);
+  $wx.style.top = Math.round(y) + "px";
+  y += WH * cw + SNG * cw;
+  $sn.style.fontSize = Math.round(cw * 0.16) + "px";
+  $sn.style.top = Math.round(y) + "px";
+  y += SNH * cw + g[3];
+  renderRoom(); renderSun();
+  $fc.style.top = Math.round(y - Math.min(g[3] * 0.3, cw * 0.3)) + "px";   // the week row sits a little higher
+  FC_W = tw; FC_CW = cw; renderFc();
   renderWx();
 }
 var S_TW = 0;
@@ -176,9 +247,8 @@ function tick(animate) {
   var d = new Date(), h = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
   var t = (h < 10 ? "0" : "") + h + (m < 10 ? "0" : "") + m;
   for (var i = 0; i < 4; i++) set(cards[i], t.charAt(i), animate);
-  $date.textContent = LANG === "tr"
-    ? d.getDate() + " " + T.months[d.getMonth()] + " " + d.getFullYear() + "  ·  " + T.days[d.getDay()]
-    : T.days[d.getDay()] + "  ·  " + T.months[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear();
+  if (h === 0 && m === 0 && s === 5) renderFc();
+  $date.textContent = d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear() + "  ·  " + DAYS[d.getDay()];
   // a thin bar that fills up over the minute
   $seci.style.width = Math.round(S_TW * (s + 1) / 60) + "px";
   if (s === 59) setTimeout(function () { $seci.style.webkitTransition = "none"; $seci.style.width = "0"; void $seci.offsetWidth; $seci.style.webkitTransition = ""; }, 950);
@@ -186,6 +256,10 @@ function tick(animate) {
 
 /* ---------------- weather (Home Assistant) ---------------- */
 var $wx = document.querySelector(".wx"), WX_ICON = 30, WX = { st: null, hi: null, lo: null };
+var $rm = document.querySelector(".rm"), ROOM = null;
+var $sn = document.querySelector(".sn"), SUN = null, HOURLY = null;
+var $fc = document.querySelector(".fc"), FC = null, FC_W = 0, FC_CW = 100;
+var DAYS_S = T.daysShort;
 var COND = T.cond;
 var CLOUD = '<path d="M7 18h10a4 4 0 0 0 .6-7.96A5.5 5.5 0 0 0 7.1 9.6 4.2 4.2 0 0 0 7 18z"/>';
 var ICON = {
@@ -202,14 +276,14 @@ var ICON = {
 var ICON_OF = { "clear-night": "moon", cloudy: "cloud", exceptional: "cloud", fog: "fog", hail: "snow", lightning: "bolt",
   "lightning-rainy": "bolt", partlycloudy: "part", pouring: "rain", rainy: "rain", snowy: "snow", "snowy-rainy": "snow",
   sunny: "sun", windy: "wind", "windy-variant": "wind" };
-function wxToken() { try { return window.localStorage.getItem("cfToken") || CONFIG.token; } catch (e) { return CONFIG.token; } }
+function wxToken() { try { return window.localStorage.getItem("frameToken") || CONFIG.token; } catch (e) { return CONFIG.token; } }
 function req(method, path, body, cb) {
   var x = new XMLHttpRequest(), done = false;
   var to = setTimeout(function () { if (done) return; done = true; try { x.abort(); } catch (e) { /* */ } cb(null); }, 12000);
   x.onreadystatechange = function () {
     if (x.readyState !== 4 || done) return;
     done = true; clearTimeout(to);
-    var j = null; if (x.status === 200) { try { j = JSON.parse(x.responseText); } catch (e) { /* */ } }
+    var j = null; if (x.status === 200) { try { j = JSON.parse(x.responseText); } catch (e) { /* */ } readSkew(x); }
     cb(j);
   };
   x.open(method, String(CONFIG.haUrl || "").replace(/\/+$/, "") + path + (method === "GET" ? "?_=" + new Date().getTime() : ""), true);
@@ -223,11 +297,19 @@ function loadWx() {
     setTimeout(loadWx, 5 * 60 * 1000);
   });
 }
+function loadWeek() {
+  var id = CONFIG.daysWeather; if (!id || !CONFIG.days) return;
+  req("POST", "/api/services/weather/get_forecasts?return_response", { entity_id: id, type: "daily" }, function (j) {
+    var f = j && j.service_response && j.service_response[id] && j.service_response[id].forecast;
+    if (f && f.length) { FC = f; renderFc(); }
+    setTimeout(loadWeek, 30 * 60 * 1000);
+  });
+}
 function loadForecast() {
   if (!CONFIG.weather) return;
   req("POST", "/api/services/weather/get_forecasts?return_response", { entity_id: CONFIG.weather, type: "daily" }, function (j) {
     var f = j && j.service_response && j.service_response[CONFIG.weather] && j.service_response[CONFIG.weather].forecast;
-    if (f && f.length) { WX.hi = f[0].temperature; WX.lo = f[0].templow; renderWx(); }
+    if (f && f.length) { WX.hi = f[0].temperature; WX.lo = f[0].templow; if (!CONFIG.daysWeather) FC = f; renderWx(); renderFc(); }
     setTimeout(loadForecast, 30 * 60 * 1000);
   });
 }
@@ -241,14 +323,137 @@ function renderWx() {
   $wx.innerHTML = html; $wx.className = "wx on";
 }
 
+/* the coming days (one row under the weather) */
+function ymd(d) { return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); }
+function renderFc() {
+  if (!CONFIG.days || !FC) { $fc.className = "fc"; return; }
+  var today = ymd(new Date()), list = [], i, m, d;
+  for (i = 0; i < FC.length && list.length < CONFIG.days; i++) {
+    m = /^(\d{4})-(\d{2})-(\d{2})/.exec(FC[i].datetime || "");
+    if (!m) continue;
+    d = new Date(+m[1], +m[2] - 1, +m[3]);
+    if (ymd(d) <= today) continue;          // today is already shown above
+    list.push({ d: d, f: FC[i] });
+  }
+  if (!list.length) { $fc.className = "fc"; return; }
+  var cw = FC_CW, w = Math.floor(FC_W / list.length), z = WX_ICON, html = "";
+  for (i = 0; i < list.length; i++) {
+    var f = list[i].f, hi = parseFloat(f.temperature), lo = parseFloat(f.templow);
+    html += '<div class="d" style="width:' + (w - (i ? 1 : 0)) + 'px">' +
+      '<span class="n" style="font-size:' + Math.round(cw * 0.15) + 'px;margin-bottom:' + Math.round(cw * 0.06) + 'px">' + DAYS_S[list[i].d.getDay()] + '</span>' +
+      '<svg viewBox="0 0 24 24" width="' + z + '" height="' + z + '">' + ICON[ICON_OF[f.condition] || "cloud"] + '</svg>' +
+      '<div style="font-size:' + Math.round(cw * 0.16) + 'px;margin-top:' + Math.round(cw * 0.06) + 'px">' +
+      '<span class="h">' + (isFinite(hi) ? Math.round(hi) + "°" : "–") + '</span> ' + (isFinite(lo) ? Math.round(lo) + "°" : "") + '</div></div>';
+  }
+  $fc.innerHTML = html;
+  $fc.style.marginLeft = (-Math.floor(FC_W / 2)) + "px";
+  $fc.className = "fc on";
+}
+
+/* sunrise / sunset and a rain warning (one small line under the weather) */
+// the iPad's clock may be off from real time (iOS 5's old Istanbul time zone); HA's Date header tells us by how much
+var SKEW = 0;
+function readSkew(x) {
+  var d = x.getResponseHeader("Date"), sd = d ? Date.parse(d) : NaN;
+  if (isFinite(sd)) { var k = sd + 500 - new Date().getTime(); if (Math.abs(k - SKEW) > 2000) SKEW = k; }
+}
+// Safari 5 can't parse "2026-10-28T04:31:08.37+00:00"; result is on the iPad's clock (see SKEW)
+function parseISO(s) {
+  var m = /^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?(Z|([+\-])(\d\d):?(\d\d))?$/.exec(s || "");
+  if (!m) return NaN;
+  var t = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  if (m[8]) { var off = (+m[9] * 60 + (+m[10])) * 60000; t += (m[8] === "+" ? -off : off); }
+  return t - SKEW;
+}
+function hhmm(t) { var d = new Date(t), h = d.getHours(), m = d.getMinutes(); return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m; }
+var WET = { rainy: "r", pouring: "r", "lightning-rainy": "r", lightning: "r", hail: "r", snowy: "s", "snowy-rainy": "s" };
+function wetAt(f) {
+  if (!f) return null;
+  if (WET[f.condition]) return WET[f.condition];
+  var p = parseFloat(f.precipitation);
+  return isFinite(p) && p >= 0.3 ? "r" : null;
+}
+function loadSun() {
+  if (!CONFIG.sun) return;
+  req("GET", "/api/states/" + CONFIG.sun, null, function (j) {
+    if (j && j.attributes) { SUN = j.attributes; renderSun(); }
+    setTimeout(loadSun, 30 * 60 * 1000);
+  });
+}
+function loadHourly() {
+  var id = CONFIG.daysWeather || CONFIG.weather; if (!CONFIG.rain || !id) return;
+  req("POST", "/api/services/weather/get_forecasts?return_response", { entity_id: id, type: "hourly" }, function (j) {
+    var f = j && j.service_response && j.service_response[id] && j.service_response[id].forecast;
+    if (f && f.length) { HOURLY = f; renderSun(); }
+    setTimeout(loadHourly, 30 * 60 * 1000);
+  });
+}
+function rainText() {
+  if (!HOURLY) return "";
+  var now = new Date().getTime(), list = [], i, t;
+  for (i = 0; i < HOURLY.length; i++) {
+    t = parseISO(HOURLY[i].datetime);
+    if (!isFinite(t) || t + 3600000 <= now) continue;    // this hour is over
+    if (t > now + 12 * 3600000) break;
+    list.push({ t: t, w: wetAt(HOURLY[i]) });
+  }
+  if (!list.length) return "";
+  if (list[0].w) {                                         // wet right now: when does it stop?
+    for (i = 1; i < list.length; i++) if (!list[i].w) return T.rainStops(list[0].w, hhmm(list[i].t));
+    return T.rainGoesOn(list[0].w);
+  }
+  for (i = 1; i < list.length; i++) if (list[i].w) return T.rainAt(list[i].w, hhmm(list[i].t));
+  return "";
+}
+var SUN_UP = '<path d="M4 18h16M7 18a5 5 0 0 1 10 0M12 4v5M9.5 6.5L12 4l2.5 2.5"/>';
+var SUN_DN = '<path d="M4 18h16M7 18a5 5 0 0 1 10 0M12 9V4M9.5 6.5L12 9l2.5-2.5"/>';
+var UMB = '<path d="M3 12a9 9 0 0 1 18 0zM12 12v6a2 2 0 0 0 4 0M12 3v0"/>';
+function renderSun() {
+  var parts = [], z = Math.round(WX_ICON * 0.7);
+  function ic(p) { return '<svg viewBox="0 0 24 24" width="' + z + '" height="' + z + '">' + p + '</svg>&nbsp;'; }
+  if (SUN) {
+    var up = parseISO(SUN.next_rising), dn = parseISO(SUN.next_setting);
+    if (isFinite(up) && isFinite(dn)) {
+      // show them in the order they come
+      var a = [[up, SUN_UP], [dn, SUN_DN]];
+      if (dn < up) a.reverse();
+      parts.push(ic(a[0][1]) + "<b>" + hhmm(a[0][0]) + "</b>");
+      parts.push(ic(a[1][1]) + "<b>" + hhmm(a[1][0]) + "</b>");
+    }
+  }
+  var rt = rainText();
+  if (rt) parts.push('<span class="rn">' + ic(UMB) + rt + '</span>');
+  if (!parts.length) { $sn.className = "sn"; return; }
+  $sn.innerHTML = parts.join("&nbsp;&nbsp;&nbsp;&nbsp;");
+  $sn.className = "sn on";
+}
+
+/* room temperature (e.g. the living room) */
+function loadRoom() {
+  if (!CONFIG.room) return;
+  req("GET", "/api/states/" + CONFIG.room, null, function (j) {
+    if (j) { ROOM = j; renderRoom(); }
+    setTimeout(loadRoom, 60 * 1000);
+  });
+}
+function renderRoom() {
+  var t = ROOM ? parseFloat(ROOM.state) : NaN;
+  if (!isFinite(t)) { $rm.className = "rm"; return; }
+  var z = Math.round(WX_ICON * 0.8);
+  $rm.innerHTML = '<svg viewBox="0 0 24 24" width="' + z + '" height="' + z + '"><path d="M3 11l9-7 9 7M5 9.5V20h14V9.5"/></svg>&nbsp; ' +
+    (CONFIG.roomLabel ? CONFIG.roomLabel + "&nbsp; " : "") + "<b>" + (Math.round(t * 10) / 10).toFixed(1).replace(".", T.dec) + "°</b>";
+  $rm.className = "rm on";
+}
+
 build(); layout(); tick(false);
-loadWx(); loadForecast();
+loadWx(); loadForecast(); loadWeek(); loadRoom(); loadSun(); loadHourly();
+setInterval(renderSun, 5 * 60 * 1000);   // the rain line moves on with the clock
 // align ticks to the start of each second
 setTimeout(function () { tick(true); setInterval(function () { tick(true); }, 1000); }, 1000 - new Date().getMilliseconds());
 window.addEventListener("orientationchange", function () { setTimeout(layout, 150); }, false);
 window.addEventListener("resize", function () { setTimeout(layout, 80); }, false);
 document.addEventListener("touchmove", function (e) { e.preventDefault(); }, false);
-if (window.console) console.log("CleanFrame Flip Clock v" + VERSION);
+if (window.console) console.log("Flip Clock v" + VERSION);
 })();
 </script>
 </body>

@@ -1,23 +1,24 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <!--
-  CleanFrame Music — iPad (1. nesil, iOS 5.1.1) sürümü  v1.0.0
-  CleanFrame Music Card'ın eski Safari'de çalışan tek dosyalık kopyası.
-  Sadece ES5 + HA REST API kullanır (websocket, Promise, fetch, flexbox-gap vs. yok).
+  Music player — iPad 1 (iOS 5.1.1)
+  A Music Assistant player drawn as a turntable: the album cover is the record label and spins while
+  music plays; the tone arm moves across the record as the track progresses. Library browser included.
+  ES5 only + HA REST API (no websockets, Promises, fetch or flexbox gap).
 
-  Kurulum:
-    1) Bu dosyayı /config/www/ klasörüne koyun (tahmin edilmesi zor bir isimle, örn. music.html).
-    2) Aşağıdaki CONFIG'i doldurun (en azından token).
-    3) iPad'de Safari ile açın:  http://<HA-IP>:8123/local/<dosya-adı>.html
-       Sonra "Ana Ekrana Ekle" → tam ekran açılır.
+  Setup:
+    1) Put this file into /config/www/ (a hard-to-guess name is a good idea).
+    2) Fill in CONFIG below (at least the token, or paste it on the setup screen).
+    3) Open it in Safari on the iPad: http://<HA-IP>:8123/local/<file-name>.html
+       then "Add to Home Screen" → it opens full screen.
 -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="format-detection" content="telephone=no">
-<title>CleanFrame Music</title>
+<title>Music</title>
 <style>
 html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#e8ecee;
  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;-webkit-text-size-adjust:none;
@@ -51,6 +52,8 @@ svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-lin
 .spin{position:absolute;border-radius:50%;background:#cfd4d6;-webkit-box-shadow:0 0 0 2px rgba(0,0,0,.35)}
 .arm{position:absolute;top:0;left:0;-webkit-transition:-webkit-transform 1.4s cubic-bezier(.45,.05,.25,1);pointer-events:none}
 .arm svg{position:absolute;top:0;left:0;stroke:none;fill:none}
+.board{position:absolute;top:0;left:0;pointer-events:none}
+.board svg{display:block}
 .knob{position:absolute;border-radius:50%;background:#d9dcdd;
  background:-webkit-radial-gradient(35% 30%,circle,#fafafa,#b9bec0 70%);-webkit-box-shadow:0 2px 4px rgba(0,0,0,.4)}
 
@@ -59,7 +62,7 @@ svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-lin
 .t{font-family:"HelveticaNeue-Medium","Helvetica Neue",Helvetica,Arial,sans-serif;font-size:32px;line-height:40px;
  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .a{font-size:19px;line-height:28px;color:#a9b3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.meta.peek .t{color:#8aaecf}
+.meta.peek .t{color:#d0463e}
 .diag{font-size:13px;line-height:18px;color:#ffb74d;text-align:center;height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* progress */
@@ -68,7 +71,7 @@ svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-lin
 .pgw .p2{text-align:right}
 .pg{display:block;-webkit-box-flex:1;height:30px;position:relative;margin:0 12px}
 .pg b,.vl b{position:absolute;left:0;right:0;top:12px;height:6px;border-radius:3px;background:rgba(232,236,238,.18);overflow:hidden}
-.pg i,.vl i{display:block;height:6px;width:0;background:#8aaecf;border-radius:3px}
+.pg i,.vl i{display:block;height:6px;width:0;background:#9e2420;border-radius:3px}
 .pg i{-webkit-transition:width .9s linear}
 .vl i{-webkit-transition:width .2s}
 
@@ -77,20 +80,20 @@ svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-lin
 .b{display:inline-block;vertical-align:middle;width:58px;height:58px;border-radius:29px;margin:0 16px;
  position:relative;color:#e8ecee;opacity:.85}
 .b svg{position:absolute;left:16px;top:16px;width:26px;height:26px}
-.b.pp{width:84px;height:84px;border-radius:42px;background:#8aaecf;color:#10161a;opacity:1}
+.b.pp{width:84px;height:84px;border-radius:42px;background:#9e2420;color:#fff;opacity:1}
 .b.pp svg{left:24px;top:24px;width:36px;height:36px}
-.b.act{opacity:1;color:#8aaecf}
+.b.act{opacity:1;color:#d0463e}
 .b.down{background:rgba(232,236,238,.12);-webkit-transform:scale(.92)}
-.b.pp.down{background:#7697b6}
+.b.pp.down{background:#7c1b18}
 
 /* bottom row */
 .row{display:-webkit-box;-webkit-box-align:center;margin-top:18px;height:56px}
 .sc{display:block;-webkit-box-flex:1;width:0;font-size:17px;color:#a9b3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dot{display:inline-block;width:12px;height:12px;border-radius:6px;background:#66bb6a;margin-right:10px;vertical-align:0}
 .dot.off{background:#7a8287}
-.dot.wait{background:#ffa600;-webkit-animation:cfp 1.2s infinite}
+.dot.wait{background:#ffa600;-webkit-animation:pulse 1.2s infinite}
 .dot.err{background:#e53935}
-@-webkit-keyframes cfp{50%{opacity:.3}}
+@-webkit-keyframes pulse{50%{opacity:.3}}
 .vol{display:-webkit-box;-webkit-box-align:center;width:300px;margin:0 16px}
 .vb{display:block;width:56px;height:44px;border-radius:22px;background:rgba(232,236,238,.08);font-size:28px;line-height:42px;text-align:center}
 .vb.down,.libb.down{background:rgba(232,236,238,.2)}
@@ -111,7 +114,7 @@ svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-lin
 .tabs{position:absolute;top:80px;left:20px;right:20px;height:44px;white-space:nowrap;overflow:hidden;text-align:center;font-size:0}
 .tab{display:inline-block;height:42px;line-height:42px;padding:0 18px;margin:0 4px;border-radius:21px;font-size:17px;color:#c9d1d5;
  background:rgba(232,236,238,.06);border:1px solid rgba(232,236,238,.08)}
-.tab.on{background:#8aaecf;color:#10161a;border-color:#8aaecf}
+.tab.on{background:#9e2420;color:#fff;border-color:#9e2420}
 .tab.down{background:rgba(232,236,238,.18)}
 .srow{position:absolute;top:136px;left:20px;right:20px;height:44px}
 .srow input{position:absolute;left:0;right:150px;top:0;height:44px;box-sizing:border-box;-webkit-box-sizing:border-box;
@@ -120,7 +123,7 @@ svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-lin
 .srow .fav{position:absolute;right:0;top:0;width:136px;height:42px;line-height:42px;text-align:center;border-radius:21px;font-size:17px;
  color:#c9d1d5;background:rgba(232,236,238,.06);border:1px solid rgba(232,236,238,.08)}
 .srow .fav.on{color:#10161a;background:#ffcc66;border-color:#ffcc66}
-.ll{position:absolute;top:196px;left:12px;right:12px;bottom:12px;overflow-x:hidden;overflow-y:scroll;-webkit-overflow-scrolling:touch}
+.ll{position:absolute;top:196px;left:12px;right:12px;bottom:12px;overflow-x:hidden;overflow-y:scroll}
 .bi{position:relative;height:68px;margin:0 8px 4px;border-radius:14px;-webkit-transform:translate3d(0,0,0)}
 .ll .more,.ll .bn{-webkit-transform:translate3d(0,0,0)}
 .bi.down{background:rgba(232,236,238,.1)}
@@ -134,7 +137,7 @@ svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-lin
 .bx .s{font-size:14px;line-height:20px;color:#98a3a8}
 .bi.single .bx{top:22px}
 .bn{padding:40px 20px;text-align:center;color:#98a3a8;font-size:18px}
-.more{height:56px;line-height:56px;text-align:center;color:#8aaecf;font-size:18px;margin:6px 8px 16px;border-radius:14px;background:rgba(232,236,238,.05)}
+.more{height:56px;line-height:56px;text-align:center;color:#d0463e;font-size:18px;margin:6px 8px 16px;border-radius:14px;background:rgba(232,236,238,.05)}
 .more.down{background:rgba(232,236,238,.12)}
 
 /* setup */
@@ -145,8 +148,8 @@ svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-lin
 .setup textarea{display:block;width:100%;height:150px;box-sizing:border-box;-webkit-box-sizing:border-box;border-radius:14px;
  border:1px solid rgba(232,236,238,.18);background:#151a1c;color:#e8ecee;font-size:15px;padding:14px;font-family:Menlo,Courier,monospace;
  -webkit-appearance:none;outline:none;-webkit-user-select:text}
-.setup .save{display:inline-block;margin-top:18px;height:52px;line-height:52px;padding:0 34px;border-radius:26px;background:#8aaecf;color:#10161a;font-size:19px}
-.setup .save.down{background:#7697b6}
+.setup .save{display:inline-block;margin-top:18px;height:52px;line-height:52px;padding:0 34px;border-radius:26px;background:#9e2420;color:#fff;font-size:19px}
+.setup .save.down{background:#7c1b18}
 </style>
 </head>
 <body>
@@ -171,7 +174,7 @@ svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-lin
   <div class="ll"></div>
  </div>
  <div class="setup hide">
-  <h1>CleanFrame Music</h1>
+  <h1>Music</h1>
   <p class="msg"></p>
   <textarea autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
   <div class="save"></div>
@@ -181,18 +184,18 @@ svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-lin
 (function () {
 "use strict";
 
-/* ======================= AYARLAR ======================= */
+/* ======================= SETTINGS ======================= */
 var CONFIG = {
   token: "", // HA long-lived access token (Profile → Security → Long-lived access tokens)
-  entity: "media_player.living_room_speaker", // Music Assistant oynatıcısı
-  power: "switch.speaker_plug",          // hoparlörün prizi (boş bırakılabilir)
-  maUrl: "http://homeassistant.local:8095",     // Music Assistant adresi (kapak görselleri için)
-  maEntry: "",                            // Music Assistant config_entry_id (boşsa otomatik bulunmaya çalışılır)
-  nextCover: "",                          // (pikap görünümünde kullanılmıyor)
-  deckColor: "#9e2420",                   // pikap gövdesinin rengi
-  name: "",                               // görünen ad (boşsa friendly_name)
+  entity: "media_player.living_room_speaker", // Music Assistant player
+  power: "switch.speaker_plug",          // the speaker's smart plug (can be left empty)
+  maUrl: "http://homeassistant.local:8095",     // Music Assistant address (for artwork)
+  maEntry: "",                            // Music Assistant config_entry_id (empty = found automatically)
+  nextCover: "",                          // (not used by the turntable view)
+  deckColor: "#9e2420",                   // colour of the turntable plinth
+  name: "",                               // shown name (empty = friendly_name)
   lang: "auto",                           // "auto" | "tr" | "en"
-  haUrl: ""                               // boş = sayfayı sunan HA (önerilen)
+  haUrl: ""                               // empty = the HA that serves this page (recommended)
 };
 /* ======================================================= */
 
@@ -305,10 +308,10 @@ var skew = 0;
 function readToken() {
   var m = /token=([^&]+)/.exec(location.hash || "");
   if (m) {
-    sset("cfToken", decodeURIComponent(m[1]));
+    sset("frameToken", decodeURIComponent(m[1]));
     try { history.replaceState(null, "", location.pathname + location.search); } catch (e) { location.hash = ""; }
   }
-  TOKEN = sget("cfToken") || String(CONFIG.token || "").replace(/\s+/g, "");
+  TOKEN = sget("frameToken") || String(CONFIG.token || "").replace(/\s+/g, "");
 }
 
 function api(method, path, body, cb) {
@@ -341,7 +344,7 @@ function call(domain, service, data, cb, ret) {
   api("POST", "/api/services/" + domain + "/" + service + (ret ? "?return_response" : ""), data || {}, function (e, j) {
     if (e) {
       if (e.status === 401) needToken(true);
-      if (window.console) console.warn("[cleanframe] " + domain + "." + service, e.status, e.msg);
+      if (window.console) console.warn("[music] " + domain + "." + service, e.status, e.msg);
     }
     if (cb) cb(e, j);
   });
@@ -400,7 +403,7 @@ function artistStr(mi) {
   }
   return "";
 }
-function cfItem(x) {
+function qItem(x) {
   if (!x) return null;
   var mi = x.media_item || {}, al = mi.album || null;
   var c = imgCands(x.image);
@@ -591,28 +594,59 @@ function sheenTexture(n) {
   g.beginPath(); g.arc(r, r, r * 0.63, 0, Math.PI * 2); g.fill();
   return c.toDataURL();
 }
-// tonearm, drawn pointing straight down from the pivot at (0,0); length L
+// tonearm (Pro-Ject style): straight tapered matte tube, black bearing block,
+// cylinder counterweight with a silver cap, small headshell with screws and wires.
+// Drawn pointing straight down from the pivot at (0,0); length L
 function armSvg(L, s) {
-  var w = Math.round(L * 0.42), h = Math.round(L * 1.32), ox = Math.round(w / 2), oy = Math.round(L * 0.3);
-  function p(x, y) { return (ox + x * s).toFixed(1) + "," + (oy + y * s).toFixed(1); }
-  var tl = L / s;   // arm length in drawing units
+  var w = Math.round(L * 0.5), h = Math.round(L * 1.36), ox = Math.round(w / 2), oy = Math.round(L * 0.3);
+  function X(x) { return (ox + x * s).toFixed(1); } function Y(y) { return (oy + y * s).toFixed(1); }
+  function p(x, y) { return X(x) + "," + Y(y); } function n(v) { return (v * s).toFixed(1); }
+  var tl = L / s, e = tl * 0.9;
   var svg = '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
-    // counterweight
-    '<rect x="' + (ox - 15 * s).toFixed(1) + '" y="' + (oy - 78 * s).toFixed(1) + '" width="' + (30 * s).toFixed(1) + '" height="' + (44 * s).toFixed(1) + '" rx="' + (6 * s).toFixed(1) + '" fill="#2a2c2e"/>' +
-    '<rect x="' + (ox - 12 * s).toFixed(1) + '" y="' + (oy - 74 * s).toFixed(1) + '" width="' + (6 * s).toFixed(1) + '" height="' + (36 * s).toFixed(1) + '" rx="' + (3 * s).toFixed(1) + '" fill="rgba(255,255,255,.12)"/>' +
-    '<rect x="' + (ox - 4 * s).toFixed(1) + '" y="' + (oy - 36 * s).toFixed(1) + '" width="' + (8 * s).toFixed(1) + '" height="' + (36 * s).toFixed(1) + '" fill="#3a3d40"/>' +
-    // tube (slight S-curve towards the headshell)
-    '<path d="M' + p(0, 0) + ' L' + p(0, tl * 0.72) + ' Q' + p(0, tl * 0.86) + ' ' + p(-14, tl * 0.93) + '" stroke="#26292b" stroke-width="' + (12 * s).toFixed(1) + '" stroke-linecap="round" fill="none"/>' +
-    '<path d="M' + p(-2.5, 4) + ' L' + p(-2.5, tl * 0.71) + '" stroke="rgba(255,255,255,.16)" stroke-width="' + (2 * s).toFixed(1) + '" stroke-linecap="round" fill="none"/>' +
-    // headshell + cartridge, stylus tip ends at (0, tl)
-    '<path d="M' + p(-24, tl * 0.92) + ' L' + p(-4, tl * 0.9) + ' L' + p(6, tl * 1.0) + ' L' + p(-14, tl * 1.03) + ' Z" fill="#1d1f21"/>' +
-    '<rect x="' + (ox - 6 * s).toFixed(1) + '" y="' + (oy + (tl * 0.965 - 4) * s).toFixed(1) + '" width="' + (12 * s).toFixed(1) + '" height="' + (9 * s).toFixed(1) + '" fill="#8aaecf"/>' +
-    '<path d="M' + p(-22, tl * 0.925) + ' L' + p(-38, tl * 0.9) + '" stroke="#cfd4d6" stroke-width="' + (3 * s).toFixed(1) + '" stroke-linecap="round" fill="none"/>' +
-    // pivot
-    '<circle cx="' + ox + '" cy="' + oy + '" r="' + (20 * s).toFixed(1) + '" fill="#2f3234"/>' +
-    '<circle cx="' + ox + '" cy="' + oy + '" r="' + (9 * s).toFixed(1) + '" fill="#c9ced0"/>' +
+    '<defs><linearGradient id="armg" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1c1e20"/><stop offset=".38" stop-color="#4a4e52"/><stop offset=".55" stop-color="#34373a"/><stop offset="1" stop-color="#18191b"/></linearGradient>' +
+    '<linearGradient id="capg" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8a9094"/><stop offset=".4" stop-color="#f1f3f4"/><stop offset="1" stop-color="#7c8286"/></linearGradient></defs>' +
+    // shadow on the record / plinth
+    '<path d="M' + p(0, 14) + ' L' + p(20, 14) + ' L' + p(15, e + 6) + ' L' + p(3, e + 6) + ' Z" fill="rgba(0,0,0,.3)"/>' +
+    '<path d="M' + p(-6, e + 4) + ' L' + p(14, e + 4) + ' L' + p(12, tl + 8) + ' L' + p(-4, tl + 8) + ' Z" fill="rgba(0,0,0,.25)"/>' +
+    // counterweight: black cylinder with a silver end cap
+    '<rect x="' + X(-5) + '" y="' + Y(-50) + '" width="' + n(10) + '" height="' + n(50) + '" fill="#26282a"/>' +
+    '<rect x="' + X(-19) + '" y="' + Y(-86) + '" width="' + n(38) + '" height="' + n(40) + '" rx="' + n(4) + '" fill="url(#armg)"/>' +
+    '<rect x="' + X(-17) + '" y="' + Y(-93) + '" width="' + n(34) + '" height="' + n(9) + '" rx="' + n(3) + '" fill="url(#capg)"/>' +
+    // tapered tube
+    '<path d="M' + p(-11, 0) + ' L' + p(11, 0) + ' L' + p(6.5, e) + ' L' + p(-6.5, e) + ' Z" fill="url(#armg)"/>' +
+    '<path d="M' + p(-4, 10) + ' L' + p(-2.2, e - 6) + '" stroke="rgba(255,255,255,.14)" stroke-width="' + n(1.6) + '"/>' +
+    // bearing block with the vertical post
+    '<rect x="' + X(-22) + '" y="' + Y(-26) + '" width="' + n(44) + '" height="' + n(50) + '" rx="' + n(9) + '" fill="#1b1c1e"/>' +
+    '<rect x="' + X(-22) + '" y="' + Y(-26) + '" width="' + n(44) + '" height="' + n(8) + '" rx="' + n(4) + '" fill="rgba(255,255,255,.1)"/>' +
+    '<circle cx="' + X(0) + '" cy="' + Y(0) + '" r="' + n(8) + '" fill="url(#capg)"/>' +
+    // headshell: small black wedge with two screws; coloured cartridge wires; stylus tip at (0, tl)
+    '<path d="M' + p(-8, e - 6) + ' L' + p(8, e - 6) + ' L' + p(21, tl - 3) + ' L' + p(8, tl + 7) + ' L' + p(-12, tl + 3) + ' L' + p(-19, tl - 8) + ' Z" fill="#141516"/>' +
+    '<circle cx="' + X(-7) + '" cy="' + Y(tl - 9) + '" r="' + n(3) + '" fill="#cfd3d5"/>' +
+    '<circle cx="' + X(8) + '" cy="' + Y(tl - 10) + '" r="' + n(3) + '" fill="#cfd3d5"/>' +
+    '<path d="M' + p(-2, e + 2) + ' q' + n(4) + ',' + n(6) + ' ' + n(1) + ',' + n(12) + '" stroke="#d33" stroke-width="' + n(1.3) + '" fill="none"/>' +
+    '<path d="M' + p(0, e + 2) + ' q' + n(4) + ',' + n(6) + ' ' + n(2) + ',' + n(12) + '" stroke="#3a3" stroke-width="' + n(1.3) + '" fill="none"/>' +
+    '<path d="M' + p(2, e + 2) + ' q' + n(4) + ',' + n(6) + ' ' + n(3) + ',' + n(12) + '" stroke="#38c" stroke-width="' + n(1.3) + '" fill="none"/>' +
+    '<circle cx="' + X(0) + '" cy="' + Y(tl) + '" r="' + n(1.8) + '" fill="#e9eaea"/>' +
     '</svg>';
   return { svg: svg, w: w, h: h, ox: ox, oy: oy };
+}
+// arm board: a light metal plate under the tonearm, reaching under the record, with a round cut-out;
+// plus the cueing lever. Static, drawn in deck units (1000 x 1000).
+function boardSvg(W, px, py) {
+  var u = W / 1000;
+  function n(v) { return (v * u).toFixed(1); }
+  return '<svg width="' + W + '" height="' + W + '" viewBox="0 0 ' + W + ' ' + W + '">' +
+    '<defs><linearGradient id="brdg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e3e6e8"/><stop offset="1" stop-color="#a9aeb1"/></linearGradient></defs>' +
+    '<g transform="rotate(135 ' + n(px) + ' ' + n(py) + ')">' +
+    '<path transform="translate(' + n(6) + ' ' + n(8) + ')" d="M' + n(px) + ',' + n(py - 58) + ' L' + n(px + 250) + ',' + n(py - 40) + ' A' + n(40) + ',' + n(40) + ' 0 0 1 ' + n(px + 250) + ',' + n(py + 40) + ' L' + n(px) + ',' + n(py + 58) + ' A' + n(58) + ',' + n(58) + ' 0 0 1 ' + n(px) + ',' + n(py - 58) + ' Z" fill="rgba(0,0,0,.22)"/>' +
+    '<path fill-rule="evenodd" d="M' + n(px) + ',' + n(py - 58) + ' L' + n(px + 250) + ',' + n(py - 40) + ' A' + n(40) + ',' + n(40) + ' 0 0 1 ' + n(px + 250) + ',' + n(py + 40) + ' L' + n(px) + ',' + n(py + 58) + ' A' + n(58) + ',' + n(58) + ' 0 0 1 ' + n(px) + ',' + n(py - 58) + ' Z' +
+      ' M' + n(px + 120) + ',' + n(py) + ' m' + n(-30) + ',0 a' + n(30) + ',' + n(30) + ' 0 1 0 ' + n(60) + ',0 a' + n(30) + ',' + n(30) + ' 0 1 0 ' + n(-60) + ',0 Z" fill="url(#brdg)"/>' +
+    '</g>' +
+    // cueing lever
+    '<path d="M' + n(px + 26) + ',' + n(py + 34) + ' L' + n(px + 62) + ',' + n(py + 92) + '" stroke="rgba(0,0,0,.25)" stroke-width="' + n(6) + '" stroke-linecap="round" transform="translate(' + n(4) + ' ' + n(5) + ')"/>' +
+    '<path d="M' + n(px + 26) + ',' + n(py + 34) + ' L' + n(px + 62) + ',' + n(py + 92) + '" stroke="#d7dbdd" stroke-width="' + n(5) + '" stroke-linecap="round"/>' +
+    '<circle cx="' + n(px + 26) + '" cy="' + n(py + 34) + '" r="' + n(9) + '" fill="#2a2c2e"/>' +
+    '</svg>';
 }
 function buildDeck(W) {
   var H = W, u = W / 1000;   // square plinth, drawing units: 1000 x 1000
@@ -650,11 +684,13 @@ function buildDeck(W) {
   var kr = Math.round(22 * u);
   kn.style.width = kn.style.height = (kr * 2) + "px"; kn.style.left = Math.round(100 * u - kr) + "px"; kn.style.top = Math.round(100 * u - kr) + "px";   // mirrors the arm pivot
   var gl = document.createElement("div"); gl.className = "gl";
-  el.appendChild(gl); el.appendChild(pl); el.appendChild(kn); el.appendChild(ad);
+  var bd = document.createElement("div"); bd.className = "board";
+  bd.innerHTML = boardSvg(W, 900, 100);
+  el.appendChild(gl); el.appendChild(bd); el.appendChild(pl); el.appendChild(kn); el.appendChild(ad);
   $fl.innerHTML = ""; $fl.appendChild(el);
   // stylus angles (deg): resting off the record vs. on the outer grooves
   TT.el = el; TT.rec = rec; TT.lab = lab; TT.arm = ad; TT.W = W; TT.src = null; TT.armPos = null;
-  TT.rest = -3; TT.play = 15.2; TT.travel = 9;
+  TT.rest = -3; TT.play = 12.8; TT.travel = 13.4;   // outer edge of the grooves -> edge of the label
 }
 function renderFlow() {
   if (!TT || !TT.el) return;
@@ -739,7 +775,7 @@ function fetchQueue() {
   }, true);
 }
 function onQueue(r) {
-  var cur = cfItem(r.current_item), nx = cfItem(r.next_item);
+  var cur = qItem(r.current_item), nx = qItem(r.next_item);
   var ci = typeof r.current_index === "number" ? r.current_index : 0;
   var a = attrs(), qid = r.queue_id || a.active_queue || a.mass_player_id || "";
   var old = S.q, same = !!old && old.qid === qid, n;
@@ -747,7 +783,7 @@ function onQueue(r) {
   if (!old) {
     // restore the covers we saw before the page was reloaded
     try {
-      var sv = JSON.parse(sget("cfHist") || "null");
+      var sv = JSON.parse(sget("musicHist") || "null");
       if (sv && sv.qid === qid) { S.hist = sv.hist || []; S.last = sv.last || null; }
     } catch (e) { /* */ }
   } else if (!same) { S.hist = []; S.last = null; }
@@ -757,7 +793,7 @@ function onQueue(r) {
     S.fc = 0; clearTimeout(pendT);
   }
   if (cur) S.last = cur;
-  sset("cfHist", JSON.stringify({ qid: qid, hist: S.hist, last: S.last }));
+  sset("musicHist", JSON.stringify({ qid: qid, hist: S.hist, last: S.last }));
   var c = {};
   if (same) for (n = ci - 4; n <= ci + 4; n++) if (old.cache[n]) c[n] = old.cache[n];
   for (var i = 0; i < S.hist.length; i++) { n = ci - S.hist.length + i; if (n >= 0 && !c[n]) c[n] = S.hist[i]; }
@@ -1009,6 +1045,43 @@ function bind() {
     var t = e.touches[0];
     if (Math.abs(t.clientX - lx) > 8 || Math.abs(t.clientY - ly) > 8) { lmv = true; if (lel) tglC(lel, "down", false); }
   }, false);
+  /* one-finger scrolling done by hand: iOS 5 only scrolls this list natively with two fingers
+     (inside the combined app's frame), so we move scrollTop ourselves and add a little momentum */
+  var ks = null, kT = 0;
+  function kStop() { clearInterval(kT); kT = 0; }
+  $ll.addEventListener("touchstart", function (e) {
+    if (kT) lmv = true;                  // a touch that stops the glide is not a tap
+    kStop();
+    if (e.touches.length !== 1) { ks = null; return; }
+    var t = e.touches[0], now = new Date().getTime();
+    ks = { x: t.clientX, y: t.clientY, top: $ll.scrollTop, ly: t.clientY, lt: now, v: 0, vert: false };
+  }, false);
+  $ll.addEventListener("touchmove", function (e) {
+    if (!ks) return;
+    var t = e.touches[0], dx = t.clientX - ks.x, dy = t.clientY - ks.y, now = new Date().getTime();
+    if (!ks.vert) {
+      if (Math.abs(dy) > 8 && Math.abs(dy) >= Math.abs(dx)) ks.vert = true;
+      else return;                       // sideways: left to the screen swipe
+    }
+    e.preventDefault();
+    $ll.scrollTop = ks.top - dy;
+    var dt = now - ks.lt;
+    if (dt > 0) ks.v = 0.6 * ((t.clientY - ks.ly) / dt) + 0.4 * ks.v;
+    ks.ly = t.clientY; ks.lt = now;
+  }, false);
+  $ll.addEventListener("touchend", function () {
+    if (!ks || !ks.vert) { ks = null; return; }
+    var v = new Date().getTime() - ks.lt > 120 ? 0 : ks.v;   // finger rested before lifting: no glide
+    ks = null;
+    if (Math.abs(v) < 0.08) return;
+    v = Math.max(-4, Math.min(4, v));
+    kT = setInterval(function () {
+      var before = $ll.scrollTop;
+      $ll.scrollTop = before - v * 16;
+      v *= 0.95;
+      if (Math.abs(v) < 0.03 || $ll.scrollTop === before) kStop();
+    }, 16);
+  }, false);
   $ll.addEventListener("touchend", function (e) {
     if (lel) tglC(lel, "down", false);
     lastT = new Date().getTime();
@@ -1057,7 +1130,7 @@ function bind() {
   onTap($ssave, function () {
     var v = $stok.value.replace(/\s+/g, "");
     if (!v) return;
-    sset("cfToken", v); TOKEN = v; $stok.value = ""; $stok.blur();
+    sset("frameToken", v); TOKEN = v; $stok.value = ""; $stok.blur();
     tglC($setup, "hide", true);
     S.loaded = false; poll();
   });
@@ -1087,7 +1160,7 @@ function start() {
   poll();
 }
 start();
-if (window.console) console.log("CleanFrame Music iPad v" + VERSION);
+if (window.console) console.log("Music v" + VERSION);
 })();
 </script>
 </body>

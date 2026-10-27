@@ -1,17 +1,19 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <!--
-  CleanFrame Photo Frame — iPad (1. nesil, iOS 5.1.1)  v1.2.0
-  HA'daki www/photos klasöründeki fotoğrafları isim sırasıyla gösterir (varsayılan: 3 dakikada bir).
-  Dosya listesi "folder" sensöründen (sensor.photos) okunur. Sadece ES5 + HA REST API.
-  Dokunma: sol kenar = önceki, sağ kenar = sonraki, orta = saati göster/gizle. Başlığa (saate) 2,5 sn basılı tutmak = token ekranı.
+  Photo frame — iPad 1 (iOS 5.1.1)
+  Shows the photos in /config/www/photos with a cross-fade. Every sub-folder there is an album;
+  double-tap the screen to pick one (or pick it in Home Assistant). Wide photos fill the screen height
+  and slowly slide across; portrait photos fill the screen. ES5 only + HA REST API.
+  Touch: left edge = previous, right edge = next, middle = clock on/off, double tap = albums.
+  Hold the middle for 2.5 s = token screen.
 -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<title>Çerçeve</title>
+<title>Photo frame</title>
 <style>
 html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#fff;
  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;-webkit-text-size-adjust:none;
@@ -21,6 +23,9 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#
  -webkit-background-size:contain;background-size:contain;opacity:0;-webkit-transition:opacity 2s ease-in-out;-webkit-transform:translate3d(0,0,0)}
 .ph.fill{-webkit-background-size:cover;background-size:cover}
 .ph.on{opacity:1}
+/* slowly panning wide photos: the picture sits on a GPU layer and slides sideways */
+.ph .pn{position:absolute;top:0;left:0;display:none;background-repeat:no-repeat;-webkit-background-size:100% 100%;background-size:100% 100%;
+ -webkit-transform:translate3d(0,0,0);-webkit-backface-visibility:hidden}
 .clk{position:absolute;left:36px;bottom:30px;text-shadow:0 2px 12px rgba(0,0,0,.7),0 0 2px rgba(0,0,0,.6);-webkit-transition:opacity .6s}
 .clk .tm{font-family:"HelveticaNeue-UltraLight","HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif;font-weight:200;font-size:96px;line-height:96px;letter-spacing:-2px}
 .clk .dt{font-family:"HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif;font-size:24px;line-height:32px;opacity:.9;margin-left:4px}
@@ -30,6 +35,19 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#
 .msg code{font-family:Menlo,Courier,monospace;color:#8aaecf;font-size:17px}
 .zone{position:absolute;top:0;bottom:0}
 .zl{left:0;width:22%}.zr{right:0;width:22%}.zc{left:22%;right:22%}
+/* album picker (double tap) */
+.alb{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.72);opacity:0;-webkit-transition:opacity .35s;display:none}
+.alb.vis{display:block}.alb.on{opacity:1}
+.alb .bx{position:absolute;left:50%;top:50%;width:440px;margin-left:-220px;-webkit-transform:translate3d(0,0,0)}
+.alb h2{margin:0 0 18px;font-weight:normal;font-size:28px;text-align:center;color:#e8ecee;
+ font-family:"HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif}
+.alb .it{position:relative;height:96px;margin-bottom:14px;border-radius:22px;background:rgba(30,32,34,.92);overflow:hidden;border:2px solid transparent}
+.alb .it.cur{border-color:#9e2420;background:rgba(158,36,32,.28)}
+.alb .it.down{background:rgba(158,36,32,.5)}
+.alb .cv{position:absolute;left:12px;top:12px;width:72px;height:72px;border-radius:14px;background:#2a2c2e no-repeat center;
+ -webkit-background-size:cover;background-size:cover}
+.alb .nm{position:absolute;left:104px;top:20px;right:20px;font-size:24px;line-height:30px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.alb .ct{position:absolute;left:104px;top:52px;font-size:16px;line-height:22px;color:#a9b3b8}
 .setup{position:absolute;top:0;left:0;right:0;bottom:0;background:#0c0f10;padding:40px;color:#e8ecee}
 .setup h1{font-weight:normal;font-size:28px;margin:0 0 12px}
 .setup p{font-size:17px;line-height:25px;color:#a9b3b8;margin:0 0 16px}
@@ -40,13 +58,14 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#
 </style>
 </head>
 <body>
-<div class="ph" id="a"></div>
-<div class="ph" id="b"></div>
+<div class="ph" id="a"><div class="pn"></div></div>
+<div class="ph" id="b"><div class="pn"></div></div>
 <div class="msg hide"></div>
 <div class="clk"><div class="tm"></div><div class="dt"></div></div>
 <div class="zone zl"></div><div class="zone zc"></div><div class="zone zr"></div>
+<div class="alb"><div class="bx"><h2></h2><div class="ls"></div></div></div>
 <div class="setup hide">
- <h1>Çerçeve</h1><p class="sm"></p>
+ <h1>Photo frame</h1><p class="sm"></p>
  <textarea autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
  <div class="save"></div>
 </div>
@@ -54,21 +73,26 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#
 (function () {
 "use strict";
 
-/* ======================= AYARLAR ======================= */
+/* ======================= SETTINGS ======================= */
 var CONFIG = {
   token: "",
-  sensor: "sensor.photos",          // folder sensörü (www/photos klasörünü izler)
-  interval: 180,                    // saniye: 3 dakika
-  shuffle: true,                    // true = rastgele sıra (her fotoğraf bir tur içinde bir kez), false = isim sırası
-  fill: false,                      // true = tüm fotoğraflar ekranı doldurur (kenarlar kırpılır), false = fotoğrafın tamamı görünür
-  fillPortrait: true,               // dikey fotoğraflar her zaman ekranı doldurur (siyah bant kalmaz)
-  clock: true,                      // köşede saat/tarih
+  albums: "/local/photos/albums.json",   // album list written by resize_photos.py; double-tap the screen to pick an album
+  albumSelect: "",                  // optional input_select to pick the album from HA (two-way), e.g. "input_select.frame_album"
+  sensor: "sensor.photos",          // folder sensor for www/photos; used only while albums.json doesn't exist yet
+  interval: 120,                    // seconds per photo
+  pan: true,                        // photos wider than the screen are scaled to the screen height and slowly slide across
+  panMax: 2.6,                      // ...unless that makes them wider than this many screens (panoramas): then shown whole
+  shuffle: true,                    // true = random order (each photo once per round), false = by name
+  fill: false,                      // true = every photo fills the screen (edges cropped), false = whole photo visible
+  fillPortrait: true,               // portrait photos always fill the screen, anchored at the bottom
+  matColor: "rgb(176,158,126)",     // colour around photos that don't fill the screen
+  clock: true,                      // clock/date in the corner
   lang: "auto",                     // "auto" | "tr" | "en"
   haUrl: ""
 };
-/* ======================================================= */
+/* ======================================================== */
 
-var VERSION = "1.2.0";
+var VERSION = "2.0.0";
 // UI language: "auto" follows the iPad's language (Turkish if it is set to Turkish, otherwise English)
 var LANG = (CONFIG.lang === "tr" || CONFIG.lang === "en") ? CONFIG.lang : (/^tr/i.test(navigator.language || "") ? "tr" : "en");
 var L10N = {
@@ -76,8 +100,10 @@ var L10N = {
     days: ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"],
     months: ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"],
     empty: "<b>Henüz fotoğraf yok</b>Fotoğrafları HA'daki <code>www/photos</code> klasörüne atın<br>(Samba share: <code>config/www/photos</code>). En geç bir dakikada görünürler.",
+    albumEmpty: "<b>{a} albümü boş</b>Fotoğrafları HA'daki <code>www/photos/{a}</code> klasörüne atın.<br>En geç 5 dakikada görünürler. Başka albüm için ekrana iki kez dokunun.",
     noSensor: "<b>Fotoğraf listesi bulunamadı</b><code>{s}</code> sensörü HA'da yok.",
     net: "<b>Home Assistant'a ulaşılamıyor</b>Bağlantı gelince fotoğraflar kendiliğinden başlayacak.",
+    albums: "Albümler", count: function (n) { return n + " fotoğraf"; }, none: "Boş",
     badTok: "Token geçersiz ya da süresi dolmuş. Yeni bir token yapıştırın.",
     setupT: "Home Assistant için bir long-lived access token gerekiyor (Profile → Security → Long-lived access tokens).",
     save: "Kaydet"
@@ -86,8 +112,10 @@ var L10N = {
     days: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
     months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
     empty: "<b>No photos yet</b>Put pictures into <code>www/photos</code> on Home Assistant<br>(Samba share: <code>config/www/photos</code>). They show up within a minute.",
+    albumEmpty: "<b>The {a} album is empty</b>Put pictures into <code>www/photos/{a}</code> on Home Assistant.<br>They show up within 5 minutes. Double-tap the screen for another album.",
     noSensor: "<b>Photo list not found</b>The <code>{s}</code> sensor doesn't exist in Home Assistant.",
     net: "<b>Can't reach Home Assistant</b>The slideshow starts by itself once it's back.",
+    albums: "Albums", count: function (n) { return n + (n === 1 ? " photo" : " photos"); }, none: "Empty",
     badTok: "The token is invalid or expired. Paste a new one.",
     setupT: "A Home Assistant long-lived access token is needed (Profile → Security → Long-lived access tokens).",
     save: "Save"
@@ -107,7 +135,7 @@ function sset(k, v) { try { if (v == null) window.localStorage.removeItem(k); el
 function ms() { return new Date().getTime(); }
 
 var BASE = String(CONFIG.haUrl || "").replace(/\/+$/, "");
-var TOKEN = sget("cfToken") || String(CONFIG.token || "").replace(/\s+/g, "");
+var TOKEN = sget("frameToken") || String(CONFIG.token || "").replace(/\s+/g, "");
 function api(path, cb) {
   var x = new XMLHttpRequest(), done = false;
   var to = setTimeout(function () { if (done) return; done = true; try { x.abort(); } catch (e) { /* */ } cb({ status: 0 }); }, 12000);
@@ -122,8 +150,16 @@ function api(path, cb) {
   x.send(null);
 }
 
+function post(path, body) {
+  var x = new XMLHttpRequest();
+  x.open("POST", BASE + path, true);
+  x.setRequestHeader("Authorization", "Bearer " + TOKEN);
+  x.setRequestHeader("Content-Type", "application/json");
+  x.send(JSON.stringify(body));
+}
+
 /* ---------------- photo list ---------------- */
-var list = [], idx = -1, cur = null, layers = [$("#a"), $("#b")], front = 0, timer = 0, $msg = $(".msg");
+var panDir = 1, list = [], idx = -1, cur = null, layers = [$("#a"), $("#b")], front = 0, timer = 0, $msg = $(".msg");
 var IMG = /\.(jpe?g|png|gif)$/i;
 // /config/www/photos/x.jpg → /local/photos/x.jpg
 function toUrl(p) {
@@ -133,7 +169,40 @@ function toUrl(p) {
   return BASE + "/local/" + out.join("/");
 }
 function base(p) { return p.substring(p.lastIndexOf("/") + 1); }
+/* albums: albums.json (written by resize_photos.py) lists every album folder and its photos */
+var ALBUMS = null, ALBUM = sget("frameAlbum") || "";
+function albumUrl(rel) {
+  var parts = String(rel).split("/"), out = [];
+  for (var i = 0; i < parts.length; i++) out.push(encodeURIComponent(parts[i]));
+  return BASE + CONFIG.albums.replace(/[^\/]*$/, "") + out.join("/");
+}
+function setList(out, cb) {
+  out.sort(function (a, b) { var x = a.n.toLowerCase(), y = b.n.toLowerCase(); return x < y ? -1 : (x > y ? 1 : 0); });
+  list = CONFIG.shuffle ? shuffled(out) : out;
+  if (!list.length) note("empty"); else tglC($msg, "hide", true);
+  if (cb) cb();
+}
 function loadList(cb) {
+  if (!CONFIG.albums) { loadSensor(cb); return; }
+  api(CONFIG.albums, function (e, j) {
+    if (e || !j || !j.albums || !j.albums.length) { ALBUMS = null; loadSensor(cb); return; }   // no album list yet: old way
+    ALBUMS = j.albums;
+    var al = null, i;
+    for (i = 0; i < ALBUMS.length; i++) if (ALBUMS[i].name === ALBUM) al = ALBUMS[i];
+    if (!al) { for (i = 0; i < ALBUMS.length; i++) if (ALBUMS[i].name === j["default"]) al = ALBUMS[i]; }
+    if (!al) al = ALBUMS[0];
+    ALBUM = al.name;
+    syncSelect();
+    var out = [];
+    for (i = 0; i < al.files.length; i++) {
+      var n = base(al.files[i]);
+      if (n.charAt(0) === "." || !IMG.test(n)) continue;
+      out.push({ n: n, u: albumUrl(al.files[i]) });
+    }
+    setList(out, cb);
+  });
+}
+function loadSensor(cb) {
   api("/api/states/" + CONFIG.sensor, function (e, j) {
     if (e) {
       if (e.status === 401) { needToken(true); return; }
@@ -147,14 +216,16 @@ function loadList(cb) {
       if (n.charAt(0) === "." || !IMG.test(n)) continue;   // skip ._ files Macs leave on Samba shares
       var u = toUrl(files[i]); if (u) out.push({ n: n, u: u });
     }
-    out.sort(function (a, b) { var x = a.n.toLowerCase(), y = b.n.toLowerCase(); return x < y ? -1 : (x > y ? 1 : 0); });
-    list = CONFIG.shuffle ? shuffled(out) : out;
-    if (!list.length) note("empty"); else tglC($msg, "hide", true);
-    if (cb) cb();
+    setList(out, cb);
   });
 }
+function esc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 function note(k) {
-  var t = T[k].replace("{s}", CONFIG.sensor);
+  var t = {
+    empty: ALBUMS ? T.albumEmpty.replace(/\{a\}/g, esc(ALBUM)) : T.empty,
+    noSensor: T.noSensor.replace("{s}", CONFIG.sensor),
+    net: T.net
+  }[k];
   $msg.innerHTML = t; tglC($msg, "hide", false);
   for (var i = 0; i < layers.length; i++) tglC(layers[i], "on", false);
   cur = null;
@@ -165,16 +236,17 @@ function note(k) {
    New photos are slotted in at a random spot among the ones not shown yet. */
 function rnd(n) { return Math.floor(Math.random() * n); }
 function mix(a) { for (var i = a.length - 1; i > 0; i--) { var j = rnd(i + 1), t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
-function saveOrder(arr) { var n = []; for (var i = 0; i < arr.length; i++) n.push(arr[i].n); sset("cfOrder", JSON.stringify(n)); }
+function K(k) { return ALBUMS ? k + ":" + ALBUM : k; }   // the random order and position are kept per album
+function saveOrder(arr) { var n = []; for (var i = 0; i < arr.length; i++) n.push(arr[i].n); sset(K("frameOrder"), JSON.stringify(n)); }
 function shuffled(items) {
   var byName = {}, i, saved = [], out = [], fresh = [];
   for (i = 0; i < items.length; i++) byName[items[i].n] = items[i];
-  try { saved = JSON.parse(sget("cfOrder") || "[]") || []; } catch (e) { saved = []; }
+  try { saved = JSON.parse(sget(K("frameOrder")) || "[]") || []; } catch (e) { saved = []; }
   for (i = 0; i < saved.length; i++) if (byName[saved[i]]) { out.push(byName[saved[i]]); byName[saved[i]] = null; }
   for (i = 0; i < items.length; i++) if (byName[items[i].n]) fresh.push(items[i]);
   if (!out.length) out = mix(fresh);
   else {
-    var at = 0, last = sget("cfPhoto");
+    var at = 0, last = sget(K("framePhoto"));
     for (i = 0; i < out.length; i++) if (out[i].n === last) { at = i + 1; break; }
     for (i = 0; i < fresh.length; i++) out.splice(at + rnd(out.length - at + 1), 0, fresh[i]);
   }
@@ -193,7 +265,7 @@ function show(step) {
   clearTimeout(timer);
   if (!list.length) { timer = setTimeout(function () { loadList(function () { show(0); }); }, 60000); return; }
   // keep our place by file name, so adding/removing photos doesn't restart the show
-  var last = sget("cfPhoto"), i;
+  var last = sget(K("framePhoto")), i;
   if (idx < 0) { idx = 0; if (last) for (i = 0; i < list.length; i++) if (list[i].n === last) { idx = i; break; } }
   else if (cur) { for (i = 0; i < list.length; i++) if (list[i].n === cur) { idx = i; break; } }
   var nidx = ((idx + step) % list.length + list.length) % list.length;
@@ -206,21 +278,46 @@ function show(step) {
   function skip() { if (list.length > 1) { timer = setTimeout(function () { show(1); }, 1500); } else next(); }
   im.onload = function () {
     if (done) return; done = true; clearTimeout(to);
-    var back = layers[1 - front];
-    back.style.backgroundImage = 'url("' + it.u.replace(/"/g, "%22") + '")';
-    // portrait photos fill the screen (no black bars); landscape ones are shown whole
-    var portrait = (im.naturalHeight || im.height) > (im.naturalWidth || im.width);
-    var fill = !!CONFIG.fill || (portrait && CONFIG.fillPortrait);
-    tglC(back, "fill", fill);
-    back.style.backgroundPosition = fill && portrait ? "50% 35%" : "center";   // keep heads in view
+    var back = layers[1 - front], pn = back.firstChild, url = 'url("' + it.u.replace(/"/g, "%22") + '")';
+    var iw = im.naturalWidth || im.width, ih = im.naturalHeight || im.height;
+    var SW = window.innerWidth, SH = window.innerHeight, wide = iw / ih > (SW / SH) * 1.02;
+    var pw = Math.round(SH * iw / ih);   // width when scaled to the screen height
+    pn.style.webkitTransition = "none"; pn.style.webkitTransform = "translate3d(0,0,0)";
+    if (CONFIG.pan && wide && pw <= SW * (CONFIG.panMax || 2.6)) {
+      // wider than the screen: fill the height and slide across during the whole time on screen
+      back.style.backgroundImage = "none"; back.style.backgroundColor = "#000"; tglC(back, "fill", false);
+      pn.style.width = pw + "px"; pn.style.height = SH + "px"; pn.style.backgroundImage = url; pn.style.display = "block";
+      panDir = -panDir;
+      var x0 = panDir > 0 ? 0 : SW - pw, x1 = panDir > 0 ? SW - pw : 0;
+      pn.style.webkitTransform = "translate3d(" + x0 + "px,0,0)";
+      back._pan = { x1: x1, secs: CONFIG.interval + 3 };
+    } else {
+      pn.style.display = "none"; pn.style.backgroundImage = "none"; back._pan = null;
+      back.style.backgroundImage = url;
+      // portrait photos fill the screen (no bars); others are shown whole on the mat colour
+      var portrait = ih > iw;
+      var fill = !!CONFIG.fill || (portrait && CONFIG.fillPortrait);
+      tglC(back, "fill", fill);
+      back.style.backgroundPosition = fill && portrait ? "50% 100%" : "center";   // portrait: always keep the bottom of the photo on screen
+      back.style.backgroundColor = fill ? "#000" : (CONFIG.matColor || "#000");   // colour of the bands around the photo
+    }
     // let the new layer paint before fading it in
     setTimeout(function () {
       tglC(back, "on", true); tglC(layers[front], "on", false); front = 1 - front;
+      if (back._pan) {   // start sliding once the layer is painted
+        void back.firstChild.offsetWidth;
+        back.firstChild.style.webkitTransition = "-webkit-transform " + back._pan.secs + "s linear";
+        back.firstChild.style.webkitTransform = "translate3d(" + back._pan.x1 + "px,0,0)";
+      }
       // free the old picture once it has faded out (iPad 1 has little memory)
       var old = layers[1 - front];
-      setTimeout(function () { if (!hasC(old, "on")) old.style.backgroundImage = "none"; }, 2300);
+      setTimeout(function () {
+        if (hasC(old, "on")) return;
+        old.style.backgroundImage = "none";
+        old.firstChild.style.webkitTransition = "none"; old.firstChild.style.backgroundImage = "none"; old.firstChild.style.display = "none";
+      }, 2300);
     }, 60);
-    cur = it.n; sset("cfPhoto", it.n);
+    cur = it.n; sset(K("framePhoto"), it.n);
     next();
   };
   im.onerror = function () { if (done) return; done = true; clearTimeout(to); skip(); };
@@ -235,8 +332,8 @@ function tick() {
   $dt.textContent = LANG === "tr" ? d.getDate() + " " + T.months[d.getMonth()] + " " + T.days[d.getDay()]
     : T.days[d.getDay()] + ", " + T.months[d.getMonth()] + " " + d.getDate();
 }
-var clockOn = sget("cfClock") !== null ? sget("cfClock") === "1" : CONFIG.clock;
-function setClock(on) { clockOn = on; sset("cfClock", on ? "1" : "0"); tglC($clk, "off", !on); }
+var clockOn = sget("frameClock") !== null ? sget("frameClock") === "1" : CONFIG.clock;
+function setClock(on) { clockOn = on; sset("frameClock", on ? "1" : "0"); tglC($clk, "off", !on); }
 
 /* ---------------- token ---------------- */
 var $setup = $(".setup"), $sm = $(".setup .sm"), $ta = $(".setup textarea"), $save = $(".setup .save");
@@ -258,17 +355,125 @@ function tap(el, fn) {
   }, false);
   el.addEventListener("click", function () { if (ms() - last > 800) fn(); }, false);
 }
-tap($(".zl"), function () { show(-1); });
-tap($(".zr"), function () { show(1); });
-tap($(".zc"), function () { setClock(!clockOn); });
+/* single tap: edges = previous / next, middle = clock on/off (after a short wait);
+   double tap anywhere = album picker */
+var tapT = 0, tapAt = 0, tapX = 0, tapY = 0;
+function zoneTap(fn, x, y) {
+  var now = ms();
+  if (tapT && now - tapAt < 380 && Math.abs(x - tapX) < 60 && Math.abs(y - tapY) < 60) {
+    clearTimeout(tapT); tapT = 0; openAlbums(); return;
+  }
+  clearTimeout(tapT); tapAt = now; tapX = x; tapY = y;
+  tapT = setTimeout(function () { tapT = 0; fn(); }, 380);
+}
+function ztap(el, fn) {
+  var last = 0, sx = 0, sy = 0;
+  el.addEventListener("touchstart", function (e) { var t = e.touches[0]; sx = t.clientX; sy = t.clientY; }, false);
+  el.addEventListener("touchend", function (e) {
+    e.preventDefault(); last = ms();
+    var t = e.changedTouches[0];
+    if (Math.abs(t.clientX - sx) > 15 || Math.abs(t.clientY - sy) > 15) return;   // a swipe, not a tap
+    zoneTap(fn, t.clientX, t.clientY);
+  }, false);
+  el.addEventListener("click", function (e) { if (ms() - last > 800) zoneTap(fn, e.clientX, e.clientY); }, false);
+}
+ztap($(".zl"), function () { show(-1); });
+ztap($(".zr"), function () { show(1); });
+ztap($(".zc"), function () { setClock(!clockOn); });
+
+/* ---------------- album picker ---------------- */
+var $alb = $(".alb"), $als = $(".alb .ls"), albT = 0;
+function closeAlbums() {
+  clearTimeout(albT);
+  tglC($alb, "on", false);
+  setTimeout(function () { if (!hasC($alb, "on")) { tglC($alb, "vis", false); $als.innerHTML = ""; } }, 400);
+}
+function openAlbums() {
+  if (!ALBUMS) return;
+  var html = "", i;
+  for (i = 0; i < ALBUMS.length; i++) {
+    var a = ALBUMS[i], n = a.files.length, cv = n ? ' style="background-image:url(\'' + albumUrl(a.files[0]).replace(/'/g, "%27") + '\')"' : "";
+    html += '<div class="it' + (a.name === ALBUM ? " cur" : "") + '" data-i="' + i + '"><div class="cv"' + cv + '></div>' +
+      '<div class="nm"></div><div class="ct">' + (n ? T.count(n) : T.none) + '</div></div>';
+  }
+  $als.innerHTML = html;
+  var its = $als.childNodes;
+  for (i = 0; i < its.length; i++) its[i].childNodes[1].textContent = ALBUMS[i].name;
+  $alb.querySelector(".bx").style.marginTop = (-(ALBUMS.length * 110 + 52) / 2) + "px";
+  tglC($alb, "vis", true); void $alb.offsetWidth; tglC($alb, "on", true);
+  clearTimeout(albT); albT = setTimeout(closeAlbums, 20000);
+}
+function pickAlbum(name) {
+  closeAlbums();
+  if (name === ALBUM) return;
+  ALBUM = name; sset("frameAlbum", name);
+  idx = -1; cur = null;
+  loadList(function () { show(0); });
+}
+
+/* ---------------- album choice in HA (input_select) ----------------
+   Its options follow the album folders; picking one in HA switches the frame,
+   and picking one here (double tap) is written back. */
+var selSeen = null, selSetAt = 0, selOpts = "";
+function syncSelect() {
+  var id = CONFIG.albumSelect; if (!id || !ALBUMS) return;
+  var names = [], i;
+  for (i = 0; i < ALBUMS.length; i++) names.push(ALBUMS[i].name);
+  if (names.join("|") !== selOpts) {
+    selOpts = names.join("|");
+    api("/api/states/" + id, function (e, j) {
+      var have = j && j.attributes && j.attributes.options ? j.attributes.options.join("|") : null;
+      if (have !== null && have !== selOpts) post("/api/services/input_select/set_options", { entity_id: id, options: names });
+      if (j && j.state !== ALBUM) reportAlbum(true);
+    });
+  } else if (selSeen !== null && selSeen !== ALBUM) reportAlbum();
+}
+function reportAlbum(force) {
+  var id = CONFIG.albumSelect; if (!id || !ALBUM || (!force && selSeen === ALBUM)) return;
+  selSeen = ALBUM; selSetAt = ms();
+  setTimeout(function () { post("/api/services/input_select/select_option", { entity_id: id, option: ALBUM }); }, force ? 800 : 0);
+}
+function pollSelect() {
+  var id = CONFIG.albumSelect; if (!id || !TOKEN) return;
+  api("/api/states/" + id, function (e, j) {
+    if (j && j.state) {
+      if (selSeen === null) selSeen = j.state;
+      else if (j.state !== selSeen && ms() - selSetAt > 3000) {
+        selSeen = j.state;
+        if (ALBUMS && j.state !== ALBUM) for (var i = 0; i < ALBUMS.length; i++) if (ALBUMS[i].name === j.state) { pickAlbum(j.state); break; }
+      }
+    }
+    setTimeout(pollSelect, 4000);
+  });
+}
+setTimeout(pollSelect, 4000);
+(function () {
+  var sx = 0, sy = 0, hit = null, last = 0;
+  function item(t) { while (t && t !== $alb) { if (t.getAttribute && t.getAttribute("data-i") !== null) return t; t = t.parentNode; } return null; }
+  function act(target) {
+    var it = item(target);
+    if (it) pickAlbum(ALBUMS[+it.getAttribute("data-i")].name); else closeAlbums();
+  }
+  $alb.addEventListener("touchstart", function (e) {
+    var t = e.touches[0]; sx = t.clientX; sy = t.clientY; hit = item(e.target); if (hit) tglC(hit, "down", true);
+  }, false);
+  $alb.addEventListener("touchend", function (e) {
+    e.preventDefault(); last = ms(); if (hit) tglC(hit, "down", false);
+    var t = e.changedTouches[0];
+    if (Math.abs(t.clientX - sx) > 15 || Math.abs(t.clientY - sy) > 15) return;
+    act(e.target);
+  }, false);
+  $alb.addEventListener("click", function (e) { if (ms() - last > 800) act(e.target); }, false);
+})();
 var lp = 0, zc = $(".zc");
 zc.addEventListener("touchstart", function () { lp = setTimeout(function () { needToken(false); }, 2500); }, false);
 zc.addEventListener("touchend", function () { clearTimeout(lp); }, false);
 zc.addEventListener("touchmove", function () { clearTimeout(lp); }, false);
 $save.textContent = T.save;
+$(".alb h2").textContent = T.albums;
 tap($save, function () {
   var v = $ta.value.replace(/\s+/g, ""); if (!v) return;
-  sset("cfToken", v); TOKEN = v; $ta.value = ""; $ta.blur(); tglC($setup, "hide", true);
+  sset("frameToken", v); TOKEN = v; $ta.value = ""; $ta.blur(); tglC($setup, "hide", true);
   loadList(function () { show(0); });
 });
 document.addEventListener("touchmove", function (e) { if (!e.target || e.target.tagName !== "TEXTAREA") e.preventDefault(); }, false);
@@ -277,7 +482,7 @@ document.addEventListener("touchmove", function (e) { if (!e.target || e.target.
 setClock(clockOn); tick(); setInterval(tick, 10000);
 if (!TOKEN) needToken(false);
 else loadList(function () { show(0); });
-if (window.console) console.log("CleanFrame Photo Frame v" + VERSION);
+if (window.console) console.log("Photo Frame v" + VERSION);
 })();
 </script>
 </body>

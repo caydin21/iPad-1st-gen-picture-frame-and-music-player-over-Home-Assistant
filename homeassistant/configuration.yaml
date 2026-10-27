@@ -1,13 +1,34 @@
 # Add these to your configuration.yaml (merge with existing `sensor:` / `shell_command:` keys if you have them),
 # then restart Home Assistant once.
 
-# Lists the pictures in /config/www/photos for photos.html (iOS 5 can't list folders itself).
+# Watches /config/www/photos so the resize script runs as soon as new pictures arrive
+# (and is the photo list for photos.html until albums.json exists).
 # /config/www is in allowlist_external_dirs by default, so nothing else is needed.
 sensor:
   - platform: folder
     folder: /config/www/photos
     filter: "*"
 
-# Shrinks new photos for the 1st-gen iPad (see shell/resize_photos.py and automations.yaml).
+# Shrinks new photos for the 1st-gen iPad, sorts them into albums and writes albums.json
+# (see shell/resize_photos.py and automations.yaml).
 shell_command:
   resize_photos: python3 /config/shell/resize_photos.py
+
+# Optional helpers (or create them in the UI: Settings → Devices & services → Helpers):
+# input_select:
+#   frame_screen:            # home.html → CONFIG.screenSelect
+#     name: Frame screen
+#     options: [Clock, Photos, Music]
+#   frame_album:             # photos.html → CONFIG.albumSelect (the iPad fills in the options itself)
+#     name: Frame album
+#     options: [Photos]
+# input_button:
+#   frame_reload:            # home.html → CONFIG.reloadButton
+#     name: Reload frame
+# input_text:
+#   frame_status:            # home.html → CONFIG.status
+#     name: Frame status
+#     max: 255
+#   frame_timer:             # home.html → CONFIG.timers (filled by the Alexa automation)
+#     name: Frame timer
+#     max: 255
