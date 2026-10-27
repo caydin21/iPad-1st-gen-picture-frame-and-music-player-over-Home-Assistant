@@ -1,4 +1,4 @@
-# CleanFrame for iPad 1
+# Picture frame & music player for iPad 1
 
 Turn a **first-generation iPad (iOS 5.1.1)** into a framed wall display for **Home Assistant**: a flip clock with the weather, a photo frame, and a Music Assistant player that looks like a spinning record. You switch between them by swiping; there are no on-screen buttons for it. Status banners for a robot vacuum and a washing machine appear on top of whatever screen is showing.
 
