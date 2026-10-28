@@ -25,6 +25,13 @@ shell_command:
 # input_button:
 #   frame_reload:            # home.html → CONFIG.reloadButton
 #     name: Reload frame
+#   frame_previous_photo:    # photos.html → CONFIG.prevButton
+#     name: Previous photo
+#   frame_next_photo:        # photos.html → CONFIG.nextButton
+#     name: Next photo
+# input_boolean:
+#   frame_lyrics:            # music.html → CONFIG.lyricsSwitch (show/hide the lyrics from a dashboard)
+#     name: Frame lyrics
 # input_text:
 #   frame_status:            # home.html → CONFIG.status
 #     name: Frame status
@@ -32,3 +39,65 @@ shell_command:
 #   frame_timer:             # home.html → CONFIG.timers (filled by the Alexa automation)
 #     name: Frame timer
 #     max: 255
+
+# Optional: song lyrics for music.html (CONFIG.lyrics: "sensor.frame_lyrics").
+# Looks the playing song up on LRCLIB (https://lrclib.net, free, no key) whenever the track changes.
+# Replace media_player.living_room_speaker with your Music Assistant player.
+rest_command:
+  lrclib_search:
+    url: "https://lrclib.net/api/search?track_name={{ title | urlencode }}&artist_name={{ artist | urlencode }}"
+    method: get
+    timeout: 15
+    headers:
+      User-Agent: "HA iPad frame (Home Assistant)"
+
+template:
+  - triggers:
+      - trigger: state
+        entity_id: media_player.living_room_speaker
+        attribute: media_title
+      - trigger: homeassistant
+        event: start
+    actions:
+      - variables:
+          title: "{{ state_attr('media_player.living_room_speaker', 'media_title') or '' }}"
+          artist: "{{ state_attr('media_player.living_room_speaker', 'media_artist') or '' }}"
+          dur: "{{ state_attr('media_player.living_room_speaker', 'media_duration') | int(0) }}"
+          lr: {}
+      - if: "{{ title != '' }}"
+        then:
+          - action: rest_command.lrclib_search
+            data:
+              title: "{{ title }}"
+              artist: "{{ artist }}"
+            response_variable: lr
+            continue_on_error: true
+          # LRCLIB sometimes answers 503 for a moment: try once more
+          - if: "{{ not (lr is mapping and lr.get('status') == 200) }}"
+            then:
+              - delay: 4
+              - action: rest_command.lrclib_search
+                data:
+                  title: "{{ title }}"
+                  artist: "{{ artist }}"
+                response_variable: lr
+                continue_on_error: true
+      - variables:
+          hits: "{{ (lr.content if lr is mapping and lr.content is list else []) }}"
+          # prefer time-synced lyrics of the same length, then any synced, then plain text
+          best: >-
+            {% set ns = namespace(b=none) %}
+            {% for x in hits if x.syncedLyrics and (dur == 0 or ((x.duration | float(0)) - dur) | abs <= 5) %}{% if ns.b is none %}{% set ns.b = x %}{% endif %}{% endfor %}
+            {% if ns.b is none %}{% for x in hits if x.syncedLyrics %}{% if ns.b is none %}{% set ns.b = x %}{% endif %}{% endfor %}{% endif %}
+            {% if ns.b is none %}{% for x in hits if x.plainLyrics %}{% if ns.b is none %}{% set ns.b = x %}{% endif %}{% endfor %}{% endif %}
+            {{ ns.b or {} }}
+    sensor:
+      - name: Frame lyrics
+        unique_id: frame_lyrics
+        default_entity_id: sensor.frame_lyrics
+        state: "{{ 'synced' if best.get('syncedLyrics') else ('plain' if best.get('plainLyrics') else 'none') }}"
+        attributes:
+          title: "{{ title }}"
+          artist: "{{ artist }}"
+          synced: "{{ best.get('syncedLyrics') or '' }}"
+          plain: "{{ '' if best.get('syncedLyrics') else (best.get('plainLyrics') or '') }}"

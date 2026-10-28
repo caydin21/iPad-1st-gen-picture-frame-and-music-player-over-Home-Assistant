@@ -4,7 +4,7 @@ Turn a **first-generation iPad (iOS 5.1.1)** into a framed wall display for **Ho
 
 - a flip clock with the weather and the coming days,
 - a photo frame with albums,
-- a Music Assistant player that looks like a spinning record.
+- a Music Assistant player that looks like a spinning record, with the song's lyrics one tap away.
 
 Status banners for a robot vacuum, a washing machine and Alexa timers appear on top of whatever screen is showing.
 
@@ -17,6 +17,8 @@ The original iPad can't run the Home Assistant app or modern dashboards. Its Saf
 | ![Clock](docs/home-clock.png) | ![Music](docs/music.png) |
 | **Photo frame** | **Albums (double tap)** |
 | ![Photos](docs/photos.png) | ![Albums](docs/photos-albums.png) |
+| **Lyrics (tap the record)** | |
+| ![Lyrics](docs/music-lyrics.png) | |
 
 ## What's inside
 
@@ -24,10 +26,10 @@ The original iPad can't run the Home Assistant app or modern dashboards. Its Saf
 |---|---|
 | `www/home.html` | The combined app: **Clock · Photos · Music**, switched by swiping. It jumps to the music screen when Music Assistant starts playing and goes back a few minutes after the music stops. It shows banners for a robot vacuum, a washing machine and Alexa timers; while a banner is up, the date on the clock screen steps aside. It reloads itself when the files on the server change. Optional extras: pick the screen from HA, reload the iPad from HA, a status line in HA every minute, and a night blackout. |
 | `www/clock.html` | Flip clock: the cards fold over when the time changes. Above it is the date; below it, from top to bottom: a room temperature, the weather (current temperature, condition, today's high and low), sunrise and sunset with a rain warning for the next 12 hours, and a row with the coming days. |
-| `www/photos.html` | Photo frame for `/config/www/photos`, changing every 2 minutes with a cross-fade, in shuffled order. Every sub-folder is an **album**: **double-tap** the screen to pick one, or pick it from HA. Wide photos are scaled to the screen height and slowly slide across; portrait photos fill the screen, anchored at the bottom; panoramas are shown whole on a mat colour. Optional clock in the corner. |
-| `www/music.html` | Music Assistant player drawn as a turntable. The album cover is the record label and spins while music plays. The tone arm lands on the outer edge of the grooves and moves in to the label as the track plays. It has transport, volume and seek controls, and a library browser (playlists, albums, artists, radio, tracks, search, favourites) that scrolls with one finger. It can also switch on the speaker's smart plug if it is off. |
+| `www/photos.html` | Photo frame for `/config/www/photos`, changing every 2 minutes with a cross-fade, in shuffled order. Every sub-folder is an **album**: **double-tap** the screen to pick one, or pick it from HA. Previous / next photo buttons in HA are optional. Wide photos are scaled to the screen height and slowly slide across; portrait photos fill the screen, anchored at the bottom; panoramas are shown whole on a mat colour. Optional clock in the corner. |
+| `www/music.html` | Music Assistant player drawn as a turntable. The album cover is the record label and spins while music plays. The tone arm lands on the outer edge of the grooves and moves in to the label as the track plays. It has transport, volume and seek controls, and a library browser (playlists, albums, artists, radio, tracks, search, favourites) that scrolls with one finger. It can also switch on the speaker's smart plug if it is off. **Tap the record** and the turntable makes way for the **lyrics** on the same plinth: time-synced lyrics scroll with the song and the current line lights up; plain lyrics slide slowly through. Tap again to bring the turntable back. |
 | `www/index.html` | Launcher. Add **this** page to the home screen (see *Caching* below). `index.html#music`, `#clock` and `#photos` open a single page instead of the combined app. |
-| `homeassistant/configuration.yaml` | A `folder` sensor and a `shell_command` for the photos, plus optional helpers. |
+| `homeassistant/configuration.yaml` | A `folder` sensor and a `shell_command` for the photos, optional helpers, and an optional lyrics sensor fed by [LRCLIB](https://lrclib.net). |
 | `homeassistant/automations.yaml` | Prepares new photos. An optional second automation shows Alexa timers on the frame instantly. |
 | `homeassistant/shell/resize_photos.py` | Scales photos down for the iPad (1024 px, or 1536 px wide for landscape) and turns them upright from their EXIF data. It sorts loose photos into the default album and writes `albums.json`. It uses the Pillow library that ships inside Home Assistant. |
 
@@ -48,6 +50,9 @@ The original iPad can't run the Home Assistant app or modern dashboards. Its Saf
    - `photos.html` → `albumSelect`: an `input_select` to pick the album. The iPad fills in its options from the album folders.
    - `home.html` → `reloadButton`: an `input_button` that reloads the iPad, handy after you change a file.
    - `home.html` → `status`: an `input_text` the iPad writes to every minute (version, its clock, current screen, timer), so you can see from HA that the frame is alive.
+   - `photos.html` → `prevButton` / `nextButton`: two `input_button`s that show the previous or next photo.
+   - `music.html` → `lyrics`: the lyrics sensor from `configuration.yaml` (a `rest_command` and a trigger-based template sensor). Whenever the track changes, Home Assistant looks the song up on LRCLIB, a free lyrics database that needs no key, and prefers time-synced lyrics. Some songs, instrumentals for example, have none; the frame then says so.
+   - `music.html` → `lyricsSwitch`: an `input_boolean` that shows or hides the lyrics from a dashboard. It works both ways.
    - `home.html` → `timers`: Alexa timers. Add the second automation and an `input_text`. It reads the duration from Alexa's answer, so the banner shows up seconds after you set a timer.
 6. **On the iPad**:
    - Open `http://<ha-ip>:8123/local/index.html` in Safari. Use **http** and the **IP address**: iOS 5 can't connect to modern TLS, so `https://` and Nabu Casa URLs won't work.
@@ -69,7 +74,7 @@ The original iPad can't run the Home Assistant app or modern dashboards. Its Saf
 
 - çevirmeli saat; altında oda sıcaklığı, hava durumu, gün doğumu/batımı, yağmur uyarısı ve önümüzdeki günler,
 - albümlü fotoğraf çerçevesi; albüm seçmek için ekrana çift dokunulur,
-- pikap görünümlü Music Assistant çalar.
+- pikap görünümlü Music Assistant çalar; plağa dokununca şarkı sözleri çıkar.
 
 Robot süpürge, çamaşır makinesi ve Alexa zamanlayıcısı çalışırken hangi ekran açıksa üstünde durum şeridi belirir.
 

@@ -28,7 +28,7 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#
  -webkit-transform:translate3d(0,0,0);-webkit-backface-visibility:hidden}
 .clk{position:absolute;left:36px;bottom:30px;text-shadow:0 2px 12px rgba(0,0,0,.7),0 0 2px rgba(0,0,0,.6);-webkit-transition:opacity .6s}
 .clk .tm{font-family:"HelveticaNeue-UltraLight","HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif;font-weight:200;font-size:96px;line-height:96px;letter-spacing:-2px}
-.clk .dt{font-family:"HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif;font-size:24px;line-height:32px;opacity:.9;margin-left:4px}
+.clk .dt{display:none;font-family:"HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif;font-size:24px;line-height:32px;opacity:.9;margin-left:4px}
 .clk.off{opacity:0}
 .msg{position:absolute;left:50%;top:50%;width:560px;margin-left:-280px;margin-top:-80px;text-align:center;color:#a9b3b8;font-size:19px;line-height:28px}
 .msg b{display:block;color:#e8ecee;font-size:26px;line-height:36px;font-weight:normal;margin-bottom:10px}
@@ -77,6 +77,8 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#
 var CONFIG = {
   token: "",
   albums: "/local/photos/albums.json",   // album list written by resize_photos.py; double-tap the screen to pick an album
+  prevButton: "",                  // optional input_button: pressing it in HA shows the previous photo, e.g. "input_button.frame_previous_photo"
+  nextButton: "",                  // optional input_button for the next photo, e.g. "input_button.frame_next_photo"
   albumSelect: "",                  // optional input_select to pick the album from HA (two-way), e.g. "input_select.frame_album"
   sensor: "sensor.photos",          // folder sensor for www/photos; used only while albums.json doesn't exist yet
   interval: 120,                    // seconds per photo
@@ -92,7 +94,7 @@ var CONFIG = {
 };
 /* ======================================================== */
 
-var VERSION = "2.0.0";
+var VERSION = "2.1.0";
 // UI language: "auto" follows the iPad's language (Turkish if it is set to Turkish, otherwise English)
 var LANG = (CONFIG.lang === "tr" || CONFIG.lang === "en") ? CONFIG.lang : (/^tr/i.test(navigator.language || "") ? "tr" : "en");
 var L10N = {
@@ -447,6 +449,25 @@ function pollSelect() {
   });
 }
 setTimeout(pollSelect, 4000);
+
+/* previous / next photo from HA: pressing an input_button changes its state (the time of the press) */
+var btnSeen = {};
+function pollButtons() {
+  var ids = [[CONFIG.prevButton, -1], [CONFIG.nextButton, 1]], left = 0, i;
+  for (i = 0; i < ids.length; i++) if (ids[i][0]) left++;
+  if (!left || !TOKEN) return;
+  for (i = 0; i < ids.length; i++) (function (id, step) {
+    if (!id) return;
+    api("/api/states/" + id, function (e, j) {
+      if (j && j.state) {
+        if (btnSeen[id] === undefined) btnSeen[id] = j.state;
+        else if (j.state !== btnSeen[id]) { btnSeen[id] = j.state; if (list.length) show(step); }
+      }
+      if (--left === 0) setTimeout(pollButtons, 2500);
+    });
+  })(ids[i][0], ids[i][1]);
+}
+setTimeout(pollButtons, 3000);
 (function () {
   var sx = 0, sy = 0, hit = null, last = 0;
   function item(t) { while (t && t !== $alb) { if (t.getAttribute && t.getAttribute("data-i") !== null) return t; t = t.parentNode; } return null; }

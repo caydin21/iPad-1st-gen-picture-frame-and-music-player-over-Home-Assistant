@@ -78,6 +78,7 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#
 .fc .n{display:block;letter-spacing:1px}
 .fc svg{display:block;margin:0 auto;stroke:#c9c9c6;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .fc .h{color:#e9e9e6;font-family:"HelveticaNeue-Medium","Helvetica Neue",Helvetica,Arial,sans-serif}
+.rm .lb,.rm b{vertical-align:middle}
 .rm b{font-weight:normal;color:#e9e9e6;font-family:"HelveticaNeue-Medium","Helvetica Neue",Helvetica,Arial,sans-serif}
 .rm svg{display:inline-block;vertical-align:middle;stroke:#8d8d90;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 </style>
@@ -93,7 +94,7 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#
 <script>
 (function () {
 "use strict";
-var VERSION = "2.0.0";
+var VERSION = "2.1.0";
 var CONFIG = {
   token: "",                       // long-lived access token (or paste it once on the iPad's setup screen of another page)
   weather: "weather.home",         // current weather + today's high/low; leave empty to hide
@@ -216,10 +217,27 @@ function layout() {
   $sn.style.fontSize = Math.round(cw * 0.16) + "px";
   $sn.style.top = Math.round(y) + "px";
   y += SNH * cw + g[3];
+  CL_B = parseInt(clock.style.top, 10) + th;
+  FC_T = Math.round(y - Math.min(g[3] * 0.3, cw * 0.3));   // the week row sits a little higher
+  if (!CONFIG.days) FC_T = Math.round(Math.min(H - 10, y));
   renderRoom(); renderSun();
-  $fc.style.top = Math.round(y - Math.min(g[3] * 0.3, cw * 0.3)) + "px";   // the week row sits a little higher
+  $fc.style.top = FC_T + "px";
   FC_W = tw; FC_CW = cw; renderFc();
   renderWx();
+  spaceRows();
+}
+// room temperature, weather and the sun/rain line share the space between the clock and
+// the week row with equal gaps (measured, since their heights depend on what they show)
+var CL_B = 0, FC_T = 0;
+function spaceRows() {
+  if (!FC_T) return;
+  var els = [$rm, $wx, $sn], vis = [], used = 0, i;
+  for (i = 0; i < els.length; i++) {
+    var h = /(^| )on( |$)/.test(els[i].className) ? els[i].offsetHeight : 0;
+    if (h > 0) { vis.push([els[i], h]); used += h; }
+  }
+  var gp = Math.max(4, (FC_T - CL_B - used) / (vis.length + 1)), y = CL_B + gp;
+  for (i = 0; i < vis.length; i++) { vis[i][0].style.top = Math.round(y) + "px"; y += vis[i][1] + gp; }
 }
 var S_TW = 0;
 
@@ -314,13 +332,14 @@ function loadForecast() {
   });
 }
 function renderWx() {
-  var s = WX.st; if (!s || s.state === "unavailable" || s.state === "unknown") { $wx.className = "wx"; return; }
+  var s = WX.st; if (!s || s.state === "unavailable" || s.state === "unknown") { $wx.className = "wx"; spaceRows(); return; }
   var a = s.attributes || {}, t = parseFloat(a.temperature), ic = ICON[ICON_OF[s.state] || "cloud"], z = WX_ICON;
   var html = '<svg viewBox="0 0 24 24" width="' + z + '" height="' + z + '">' + ic + '</svg>&nbsp; ' +
     '<span class="tp">' + (isFinite(t) ? Math.round(t) + "°" : "") + '</span>&nbsp; ' +
     '<span class="cd">' + (COND[s.state] || s.state) + '</span>';
   if (WX.hi != null && WX.lo != null) html += '<span class="hl">&nbsp;&nbsp;·&nbsp;&nbsp;' + Math.round(WX.hi) + "° / " + Math.round(WX.lo) + "°</span>";
   $wx.innerHTML = html; $wx.className = "wx on";
+  spaceRows();
 }
 
 /* the coming days (one row under the weather) */
@@ -423,9 +442,10 @@ function renderSun() {
   }
   var rt = rainText();
   if (rt) parts.push('<span class="rn">' + ic(UMB) + rt + '</span>');
-  if (!parts.length) { $sn.className = "sn"; return; }
+  if (!parts.length) { $sn.className = "sn"; spaceRows(); return; }
   $sn.innerHTML = parts.join("&nbsp;&nbsp;&nbsp;&nbsp;");
   $sn.className = "sn on";
+  spaceRows();
 }
 
 /* room temperature (e.g. the living room) */
@@ -438,11 +458,12 @@ function loadRoom() {
 }
 function renderRoom() {
   var t = ROOM ? parseFloat(ROOM.state) : NaN;
-  if (!isFinite(t)) { $rm.className = "rm"; return; }
+  if (!isFinite(t)) { $rm.className = "rm"; spaceRows(); return; }
   var z = Math.round(WX_ICON * 0.8);
   $rm.innerHTML = '<svg viewBox="0 0 24 24" width="' + z + '" height="' + z + '"><path d="M3 11l9-7 9 7M5 9.5V20h14V9.5"/></svg>&nbsp; ' +
-    (CONFIG.roomLabel ? CONFIG.roomLabel + "&nbsp; " : "") + "<b>" + (Math.round(t * 10) / 10).toFixed(1).replace(".", T.dec) + "°</b>";
+    (CONFIG.roomLabel ? '<span class="lb">' + CONFIG.roomLabel + "</span>&nbsp; " : "") + "<b>" + (Math.round(t * 10) / 10).toFixed(1).replace(".", T.dec) + "°</b>";
   $rm.className = "rm on";
+  spaceRows();
 }
 
 build(); layout(); tick(false);

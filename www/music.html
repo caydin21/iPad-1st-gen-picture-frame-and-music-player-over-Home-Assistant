@@ -53,6 +53,19 @@ svg{stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-lin
 .arm{position:absolute;top:0;left:0;-webkit-transition:-webkit-transform 1.4s cubic-bezier(.45,.05,.25,1);pointer-events:none}
 .arm svg{position:absolute;top:0;left:0;stroke:none;fill:none}
 .board{position:absolute;top:0;left:0;pointer-events:none}
+/* lyrics: tapping the record swaps the turntable for the song's lyrics on the same red plinth */
+.tt .board,.tt .pl,.tt .knob,.tt .arm{-webkit-transition:opacity .45s}
+.tt.lyon .board,.tt.lyon .pl,.tt.lyon .knob,.tt.lyon .arm{opacity:0;pointer-events:none}
+.lyr{position:absolute;top:0;left:0;right:0;bottom:0;overflow:hidden;opacity:0;-webkit-transition:opacity .45s;pointer-events:none;
+ -webkit-mask-image:-webkit-linear-gradient(top,rgba(0,0,0,0) 0,#000 16%,#000 84%,rgba(0,0,0,0) 100%)}
+.tt.lyon .lyr{opacity:1}
+.lyl{position:absolute;left:0;right:0;top:0;-webkit-transition:-webkit-transform .6s ease-out;-webkit-transform:translate3d(0,0,0)}
+.lyl div{color:rgba(255,255,255,.5);text-align:center;-webkit-transition:color .4s;
+ font-family:"HelveticaNeue-Medium","Helvetica Neue",Helvetica,Arial,sans-serif}
+.lyl div.cur{color:#fff}
+.lyl.plain div{color:rgba(255,255,255,.88)}
+.lym{position:absolute;left:8%;right:8%;top:50%;text-align:center;color:rgba(255,255,255,.75);-webkit-transform:translate3d(0,-50%,0);
+ font-family:"HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif}
 .board svg{display:block}
 .knob{position:absolute;border-radius:50%;background:#d9dcdd;
  background:-webkit-radial-gradient(35% 30%,circle,#fafafa,#b9bec0 70%);-webkit-box-shadow:0 2px 4px rgba(0,0,0,.4)}
@@ -193,6 +206,8 @@ var CONFIG = {
   maEntry: "",                            // Music Assistant config_entry_id (empty = found automatically)
   nextCover: "",                          // (not used by the turntable view)
   deckColor: "#9e2420",                   // colour of the turntable plinth
+  lyrics: "",                            // optional lyrics sensor (see configuration.yaml), e.g. "sensor.frame_lyrics"; tap the record to show the lyrics
+  lyricsSwitch: "",                      // optional input_boolean to show/hide the lyrics from HA (two-way), e.g. "input_boolean.frame_lyrics"
   name: "",                               // shown name (empty = friendly_name)
   lang: "auto",                           // "auto" | "tr" | "en"
   haUrl: ""                               // empty = the HA that serves this page (recommended)
@@ -214,7 +229,8 @@ var L10N = {
     net: "Home Assistant'a ulaşılamıyor", noQueue: "Music Assistant kuyruğu alınamadı",
     setupT: "Home Assistant'a bağlanmak için bir long-lived access token gerekiyor. Bilgisayarınızda HA → Profile → Security → Long-lived access tokens bölümünden oluşturup aşağıya yapıştırın.",
     badTok: "Token geçersiz ya da süresi dolmuş. Yeni bir token yapıştırın.",
-    save: "Kaydet"
+    save: "Kaydet",
+    lyrWait: "Sözler aranıyor…", lyrNone: "Bu şarkının sözleri bulunamadı", lyrIdle: "Çalan bir şarkı yok"
   },
   en: {
     nothing: "Nothing is playing", idle: "Start something from the Library", noEntity: "Player not found",
@@ -228,7 +244,8 @@ var L10N = {
     net: "Can't reach Home Assistant", noQueue: "Could not get the Music Assistant queue",
     setupT: "A long-lived access token is needed to connect to Home Assistant. Create one on your computer under HA → Profile → Security → Long-lived access tokens and paste it below.",
     badTok: "The token is invalid or expired. Paste a new one.",
-    save: "Save"
+    save: "Save",
+    lyrWait: "Looking for the lyrics…", lyrNone: "No lyrics found for this song", lyrIdle: "Nothing is playing"
   }
 };
 var LANG = (CONFIG.lang === "tr" || CONFIG.lang === "en") ? CONFIG.lang : (/^tr/i.test(navigator.language || "") ? "tr" : "en");
@@ -439,7 +456,12 @@ var $setup = $(".setup"), $smsg = $(".setup .msg"), $stok = $(".setup textarea")
 function poll() {
   clearTimeout(pollT);
   if (!TOKEN) return;
-  var left = 1 + (CONFIG.power ? 1 : 0) + (CONFIG.nextCover && !S.ncMissing ? 1 : 0), changed = false;
+  var left = 1 + (CONFIG.power ? 1 : 0) + (CONFIG.nextCover && !S.ncMissing ? 1 : 0) + (CONFIG.lyrics && CONFIG.lyricsSwitch ? 1 : 0), changed = false;
+  if (CONFIG.lyrics && CONFIG.lyricsSwitch) api("GET", "/api/states/" + CONFIG.lyricsSwitch, null, function (e, j) {
+    // HA asks for the lyrics view; ignore answers that may predate a tap on the iPad
+    if (!e && j && (j.state === "on" || j.state === "off") && new Date().getTime() - LY.pushT > 5000 && (j.state === "on") !== LY.open) toggleLyrics(true);
+    fin();
+  });
   function fin() {
     if (--left > 0) return;
     if (changed || !S.loaded) { S.loaded = true; update(); }
@@ -686,10 +708,14 @@ function buildDeck(W) {
   var gl = document.createElement("div"); gl.className = "gl";
   var bd = document.createElement("div"); bd.className = "board";
   bd.innerHTML = boardSvg(W, 900, 100);
-  el.appendChild(gl); el.appendChild(bd); el.appendChild(pl); el.appendChild(kn); el.appendChild(ad);
+  var ly = document.createElement("div"); ly.className = "lyr";
+  ly.innerHTML = '<div class="lyl"></div><div class="lym"></div>';
+  el.appendChild(gl); el.appendChild(bd); el.appendChild(pl); el.appendChild(kn); el.appendChild(ad); el.appendChild(ly);
   $fl.innerHTML = ""; $fl.appendChild(el);
   // stylus angles (deg): resting off the record vs. on the outer grooves
   TT.el = el; TT.rec = rec; TT.lab = lab; TT.arm = ad; TT.W = W; TT.src = null; TT.armPos = null;
+  TT.ly = ly; TT.lyl = ly.firstChild; TT.lym = ly.lastChild; LY.drawn = null;
+  if (LY.open) tglC(el, "lyon", true);
   TT.rest = -3; TT.play = 12.8; TT.travel = 13.4;   // outer edge of the grooves -> edge of the label
 }
 function renderFlow() {
@@ -702,7 +728,9 @@ function renderFlow() {
   if (TT.armPos === null || Math.abs(ang - TT.armPos) > 0.3) {
     TT.armPos = ang; TT.arm.style.webkitTransform = "rotate(" + ang.toFixed(2) + "deg)";
   }
-  var pic = a.entity_picture ? imgCands(a.entity_picture) : [];
+  // Spotify Connect etc. report the cover as an https CDN link iOS 5 can't load;
+  // HA's own http proxy copy (entity_picture_local) comes first when there is one
+  var pic = (a.entity_picture_local ? imgCands(a.entity_picture_local) : []).concat(a.entity_picture ? imgCands(a.entity_picture) : []);
   var key = on ? (a.media_title || "") + "|" + picKey(pic[0] || "") : "";
   if (TT.src === key) return;
   TT.src = key;
@@ -749,7 +777,95 @@ function layout() {
 /* ---------------- turntable gestures ---------------- */
 var pendT = 0;
 function move(d) { act(d > 0 ? "next" : "prev"); }
-function tapCover(target) { if (closest(target, "pl", $fl)) act("pp"); }
+function tapCover(target) {
+  if (!CONFIG.lyrics) { if (closest(target, "pl", $fl)) act("pp"); return; }
+  if (LY.open || closest(target, "pl", $fl)) toggleLyrics();
+}
+
+/* ---------------- lyrics (lyrics sensor, filled from LRCLIB by HA) ---------------- */
+var LY = { open: false, data: null, lines: null, drawn: null, cur: -1, t: 0, lastFetch: 0, pushT: 0 };
+function toggleLyrics(fromHA) {
+  LY.open = !LY.open;
+  if (!fromHA && CONFIG.lyricsSwitch) {   // tell HA, so the dashboard icon follows
+    LY.pushT = new Date().getTime();
+    call(CONFIG.lyricsSwitch.split(".")[0], LY.open ? "turn_on" : "turn_off", { entity_id: CONFIG.lyricsSwitch });
+  }
+  if (TT && TT.el) tglC(TT.el, "lyon", LY.open);
+  if (LY.open) { LY.drawn = null; LY.cur = -1; fetchLyrics(); renderLyrics(); }
+  clearTimeout(LY.t);
+  if (LY.open) LY.t = setTimeout(lyricsLoop, 4000);
+}
+function lyricsLoop() {
+  if (!LY.open) return;
+  var a = attrs(), d = LY.data;
+  // the sensor is updated a moment after the track changes: ask again sooner while it is behind
+  var behind = !d || (a.media_title && d.title !== a.media_title);
+  if (behind || new Date().getTime() - LY.lastFetch > 30000) fetchLyrics();
+  LY.t = setTimeout(lyricsLoop, behind ? 3000 : 10000);
+}
+function fetchLyrics() {
+  LY.lastFetch = new Date().getTime();
+  api("GET", "/api/states/" + CONFIG.lyrics, null, function (e, j) {
+    if (e || !j) return;
+    var at = j.attributes || {};
+    var d = { state: j.state, title: at.title || "", artist: at.artist || "", synced: at.synced || "", plain: at.plain || "" };
+    var k = d.state + "|" + d.title + "|" + d.synced.length + "|" + d.plain.length;
+    if (LY.data && LY.dataKey === k) return;
+    LY.data = d; LY.dataKey = k; LY.lines = parseLrc(d.synced); LY.drawn = null; LY.cur = -1;
+    renderLyrics();
+  });
+}
+function parseLrc(t) {
+  var out = [], rows = String(t || "").split(/\r?\n/), i, m, re = /\[(\d+):(\d+(?:\.\d+)?)\]/g;
+  for (i = 0; i < rows.length; i++) {
+    var times = [], txt = rows[i].replace(re, function (x, mm, ss) { times.push(+mm * 60 + parseFloat(ss)); return ""; });
+    txt = txt.replace(/^\s+|\s+$/g, "");
+    for (m = 0; m < times.length; m++) out.push({ t: times[m], x: txt });
+  }
+  out.sort(function (a, b) { return a.t - b.t; });
+  return out;
+}
+function lyrMsg(t) { TT.lym.textContent = t; TT.lym.style.display = t ? "block" : "none"; }
+function renderLyrics() {
+  if (!LY.open || !TT || !TT.ly) return;
+  var W = TT.W, a = attrs(), s = st(), d = LY.data, on = !!s && (s.state === "playing" || s.state === "paused") && !!a.media_title;
+  var fs = Math.round(W * 0.046), lh = Math.round(fs * 1.5), gap = Math.round(fs * 0.55);
+  TT.lym.style.fontSize = Math.round(W * 0.04) + "px";
+  if (!on) { TT.lyl.innerHTML = ""; LY.drawn = null; lyrMsg(L.lyrIdle); return; }
+  if (!d || d.title !== a.media_title) { TT.lyl.innerHTML = ""; LY.drawn = null; lyrMsg(L.lyrWait); return; }
+  var synced = LY.lines && LY.lines.length, key = LY.dataKey + "|" + W;
+  if (!synced && !d.plain) { TT.lyl.innerHTML = ""; LY.drawn = null; lyrMsg(L.lyrNone); return; }
+  lyrMsg("");
+  if (LY.drawn !== key) {   // (re)build the line list
+    var rows = synced ? LY.lines : null, html = "", i, plain = synced ? null : d.plain.split(/\r?\n/);
+    var n = synced ? rows.length : plain.length;
+    for (i = 0; i < n; i++) {
+      var tx = synced ? rows[i].x : plain[i];
+      html += '<div style="font-size:' + fs + 'px;line-height:' + lh + 'px;padding:' + Math.round(gap / 2) + 'px 9%;min-height:' + (tx ? 0 : Math.round(lh * 0.5)) + 'px"></div>';
+    }
+    TT.lyl.innerHTML = html;
+    var divs = TT.lyl.childNodes;
+    for (i = 0; i < divs.length; i++) divs[i].textContent = synced ? (rows[i].x || "♪") : plain[i];
+    tglC(TT.lyl, "plain", !synced);
+    LY.drawn = key; LY.cur = -2;
+  }
+  var dur = parseFloat(a.media_duration) || 0, pos = prog() * dur + 0.4, H = W, kids = TT.lyl.childNodes, y;
+  if (synced) {
+    var c = -1;
+    for (var k = 0; k < LY.lines.length; k++) if (LY.lines[k].t <= pos) c = k; else break;
+    if (c === LY.cur) return;
+    if (LY.cur >= 0 && kids[LY.cur]) tglC(kids[LY.cur], "cur", false);
+    LY.cur = c;
+    var el = kids[Math.max(0, c)];
+    if (c >= 0) tglC(el, "cur", true);
+    y = Math.round(H * 0.45 - el.offsetTop - el.offsetHeight / 2);
+  } else {
+    // plain lyrics: slide slowly through the text as the song plays
+    var total = TT.lyl.offsetHeight, f = dur > 0 ? Math.min(1, Math.max(0, (pos - 10) / (dur - 20))) : 0;
+    y = Math.round(H * 0.2 - Math.max(0, total - H * 0.6) * f);
+  }
+  TT.lyl.style.webkitTransform = "translate3d(0," + y + "px,0)";
+}
 
 /* ---------------- queue (music_assistant.get_queue via REST) ---------------- */
 function checkQueue() {
@@ -1154,7 +1270,7 @@ function start() {
   bind();
   renderCtl(); renderText(); renderFlow();
   layout();
-  setInterval(function () { renderProg(); renderFlow(); }, 1000);
+  setInterval(function () { renderProg(); renderFlow(); renderLyrics(); }, 1000);
   readToken();
   if (!TOKEN) { needToken(false); return; }
   poll();
