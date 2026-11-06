@@ -1,10 +1,11 @@
 # Picture frame & music player for iPad 1
 
-Turn a **first-generation iPad (iOS 5.1.1)** into a framed wall display for **Home Assistant**. It has three screens and you swipe between them; there are no on-screen buttons for that:
+Turn a **first-generation iPad (iOS 5.1.1)** into a framed wall display for **Home Assistant**. It has three screens, plus an optional fourth, and you swipe between them; there are no on-screen buttons for that:
 
 - a flip clock with the weather and the coming days,
 - a photo frame with albums,
-- a Music Assistant player that looks like a spinning record, with the song's lyrics one tap away.
+- a Music Assistant player that looks like a spinning record, with the song's lyrics one tap away,
+- an aquarium: a looping video of your choice (optional).
 
 Status banners for a robot vacuum, a washing machine and Alexa timers appear on top of whatever screen is showing.
 
@@ -28,7 +29,8 @@ The original iPad can't run the Home Assistant app or modern dashboards. Its Saf
 | `www/clock.html` | Flip clock: the cards fold over when the time changes. Above it is the date; below it, from top to bottom: a room temperature, the weather (current temperature, condition, today's high and low), sunrise and sunset with a rain warning for the next 12 hours, and a row with the coming days. |
 | `www/photos.html` | Photo frame for `/config/www/photos`, changing every 2 minutes with a cross-fade, in shuffled order. Every sub-folder is an **album**: **double-tap** the screen to pick one, or pick it from HA. Previous / next photo buttons in HA are optional. Wide photos are scaled to the screen height and slowly slide across; portrait photos fill the screen, anchored at the bottom; panoramas are shown whole on a mat colour. Optional clock in the corner. |
 | `www/music.html` | Music Assistant player drawn as a turntable. The album cover is the record label and spins while music plays. The tone arm lands on the outer edge of the grooves and moves in to the label as the track plays. It has transport, volume and seek controls, and a library browser (playlists, albums, artists, radio, tracks, search, favourites) that scrolls with one finger. It can also switch on the speaker's smart plug if it is off. **Tap the record** and the turntable makes way for the **lyrics** on the same plinth: time-synced lyrics scroll with the song and the current line lights up; plain lyrics slide slowly through. Tap again to bring the turntable back. |
-| `www/index.html` | Launcher. Add **this** page to the home screen (see *Caching* below). `index.html#music`, `#clock` and `#photos` open a single page instead of the combined app. |
+| `www/aquarium.html` | Plays a video from `/config/www/videos/aquarium.mp4` full screen in an endless loop, for example an aquarium. One tap shows or hides the clock in the corner. The video pauses while another screen is shown. **No video is included**: use your own, converted as described under *Aquarium video* below. |
+| `www/index.html` | Launcher. Add **this** page to the home screen (see *Caching* below). `index.html#music`, `#clock`, `#photos` and `#aquarium` open a single page instead of the combined app. |
 | `homeassistant/configuration.yaml` | A `folder` sensor and a `shell_command` for the photos, optional helpers, and an optional lyrics sensor fed by [LRCLIB](https://lrclib.net). |
 | `homeassistant/automations.yaml` | Prepares new photos. An optional second automation shows Alexa timers on the frame instantly. |
 | `homeassistant/shell/resize_photos.py` | Scales photos down for the iPad (1024 px, or 1536 px wide for landscape) and turns them upright from their EXIF data. It sorts loose photos into the default album and writes `albums.json`. It uses the Pillow library that ships inside Home Assistant. |
@@ -59,6 +61,22 @@ The original iPad can't run the Home Assistant app or modern dashboards. Its Saf
    - Tap **Add to Home Screen**.
    - Set **Settings → General → Auto-Lock → Never**.
 
+## Aquarium video
+
+The iPad 1 plays H.264 video up to 720p in the *Main* profile only; most downloaded videos are 1080p and/or *High* profile and won't play. Convert yours with [ffmpeg](https://ffmpeg.org), cropping it to the portrait screen and dropping the sound:
+
+```sh
+# 1280x720 source -> 540x720 portrait crop from the middle, 30 fps, no audio
+ffmpeg -i input.mp4 -an -vf "crop=540:720:(iw-540)/2:0,fps=30,format=yuv420p" \
+  -c:v libx264 -preset veryfast -profile:v main -level 3.1 -crf 24 -maxrate 1500k -bufsize 3000k \
+  -g 60 -movflags +faststart aquarium.mp4
+ffmpeg -i aquarium.mp4 -frames:v 1 -q:v 3 aquarium.jpg   # still frame shown until the video starts
+```
+
+For a 1920x1080 source, crop with `crop=810:1080:(iw-810)/2:0,scale=540:720` instead. For a frame hung in landscape, leave out the crop and use `scale=-2:720`. Copy both files to `/config/www/videos/`. Studio Code Server handles large uploads better than the File editor.
+
+iOS 5 doesn't let a page start a video by itself: swiping to the aquarium, or one tap, starts it. After that it also plays when the screen is picked from Home Assistant, until the iPad reloads.
+
 ## Notes
 
 - **Caching.** Home Assistant serves `/local` files with a 31-day browser cache. If you open a page directly, the iPad keeps showing the old copy even after you update the file. `index.html` always opens the real page under a fresh URL, and `home.html` checks every 5 minutes whether any of its files changed and reloads itself if so (or right away with the reload button).
@@ -74,7 +92,8 @@ The original iPad can't run the Home Assistant app or modern dashboards. Its Saf
 
 - çevirmeli saat; altında oda sıcaklığı, hava durumu, gün doğumu/batımı, yağmur uyarısı ve önümüzdeki günler,
 - albümlü fotoğraf çerçevesi; albüm seçmek için ekrana çift dokunulur,
-- pikap görünümlü Music Assistant çalar; plağa dokununca şarkı sözleri çıkar.
+- pikap görünümlü Music Assistant çalar; plağa dokununca şarkı sözleri çıkar,
+- isteğe bağlı akvaryum ekranı: kendi seçtiğin bir videoyu sonsuz döngüde oynatır (video projeye dahil değildir).
 
 Robot süpürge, çamaşır makinesi ve Alexa zamanlayıcısı çalışırken hangi ekran açıksa üstünde durum şeridi belirir.
 

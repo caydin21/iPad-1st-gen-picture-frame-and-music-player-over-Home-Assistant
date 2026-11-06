@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!--
+  Aquarium — iPad 1st gen (iOS 5.1.1)
+  Plays www/videos/aquarium.mp4 full screen in an endless loop (no sound). Bring your own video;
+  see the README for the ffmpeg command that makes it playable on the iPad 1.
+  One tap shows or hides the clock in the corner, as on the photo screen.
+  iOS 5 won't start a video without a touch: swiping to this screen or one tap starts it, and after
+  that it also plays by itself when the screen is picked from Home Assistant.
+  Inside home.html the video pauses while the screen isn't shown, to spare the iPad.
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>Aquarium</title>
+<style>
+html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#fff;
+ font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;-webkit-text-size-adjust:none;
+ -webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:rgba(0,0,0,0)}
+video{position:absolute;top:0;left:0;background:#000}
+/* still frame over the video until it really plays (hides iOS's own play button) */
+.pst{position:absolute;top:0;left:0;right:0;bottom:0;background:#000 no-repeat center;-webkit-background-size:cover;background-size:cover;
+ -webkit-transition:opacity .8s}
+.pst.off{opacity:0}
+.hint{position:absolute;left:0;right:0;top:50%;margin-top:-20px;text-align:center;font-size:20px;line-height:40px;color:rgba(255,255,255,.75);
+ text-shadow:0 2px 10px rgba(0,0,0,.8);opacity:0;-webkit-transition:opacity .6s}
+.hint.on{opacity:1}
+.clk{position:absolute;left:36px;bottom:30px;text-shadow:0 2px 12px rgba(0,0,0,.7),0 0 2px rgba(0,0,0,.6);-webkit-transition:opacity .6s}
+.clk .tm{font-family:"HelveticaNeue-UltraLight","HelveticaNeue-Light","Helvetica Neue",Helvetica,Arial,sans-serif;font-weight:200;font-size:96px;line-height:96px;letter-spacing:-2px}
+.clk.off{opacity:0}
+.tap{position:absolute;top:0;left:0;right:0;bottom:0}
+</style>
+</head>
+<body>
+<video preload="auto" loop></video>
+<div class="pst"></div>
+<div class="hint"></div>
+<div class="clk off"><div class="tm"></div></div>
+<div class="tap"></div>
+<script>
+(function () {
+"use strict";
+
+/* ======================= SETTINGS ======================= */
+var CONFIG = {
+  video: "/local/videos/aquarium.mp4",     // H.264 Main profile, at most 720p (iPad 1), no audio needed
+  poster: "/local/videos/aquarium.jpg",    // first frame of the video; shown until the video plays
+  clock: false,                            // show the clock at first start (afterwards a tap toggles it and it is remembered)
+  lang: ""                                 // "" = the iPad's language, or "tr" / "en"
+};
+/* ======================================================= */
+
+var VERSION = "1.0.0";
+var TR = (CONFIG.lang || (navigator.language || "tr")).slice(0, 2).toLowerCase() === "tr";
+var L = TR ? { start: "Başlatmak için dokunun" } : { start: "Tap to start" };
+
+function $(s) { return document.querySelector(s); }
+function ms() { return new Date().getTime(); }
+function sget(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+function sset(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* */ } }
+function hasC(el, c) { return (" " + el.className + " ").indexOf(" " + c + " ") > -1; }
+function tglC(el, c, on) {
+  var h = hasC(el, c);
+  if (on && !h) el.className = (el.className ? el.className + " " : "") + c;
+  else if (!on && h) el.className = (" " + el.className + " ").replace(" " + c + " ", " ").replace(/^\s+|\s+$/g, "");
+}
+
+var v = $("video"), $pst = $(".pst"), $hint = $(".hint"), $clk = $(".clk"), $tm = $(".tm");
+$hint.textContent = L.start;
+var stamp = "?v=" + VERSION;
+$pst.style.backgroundImage = "url(" + CONFIG.poster + stamp + ")";
+
+function size() {
+  var W = window.innerWidth, H = window.innerHeight;
+  v.style.width = W + "px"; v.style.height = H + "px"; v.width = W; v.height = H;
+}
+
+/* ---------------- playback ----------------
+   visible: is this screen on show (the combined app tells us through window.cfVisible) */
+var visible = true, playing = false, lastT = -1, stuck = 0, loaded = false;
+function load() { if (loaded) return; loaded = true; v.src = CONFIG.video + stamp; try { v.load(); } catch (e) { /* */ } }
+function play() {
+  if (!visible) return;
+  load();
+  try { v.play(); } catch (e) { /* */ }
+}
+function pause() { try { v.pause(); } catch (e) { /* */ } }
+v.addEventListener("playing", function () { playing = true; tglC($pst, "off", true); tglC($hint, "on", false); }, false);
+v.addEventListener("pause", function () { playing = false; }, false);
+// old WebKit may not honour loop: start over by hand
+v.addEventListener("ended", function () { try { v.currentTime = 0; } catch (e) { /* */ } play(); }, false);
+v.addEventListener("error", function () { loaded = false; playing = false; tglC($pst, "off", false); }, false);
+
+// watchdog: if the picture stands still while it should move, give it a nudge; if iOS refused to
+// start without a tap, say so
+setInterval(function () {
+  if (!visible) { tglC($hint, "on", false); return; }
+  var t = v.currentTime || 0;
+  if (playing && t === lastT) { if (++stuck >= 2) { stuck = 0; play(); } } else stuck = 0;
+  lastT = t;
+  tglC($hint, "on", !playing && !v.currentTime);
+  if (!playing && v.currentTime) play();
+}, 5000);
+
+window.cfVisible = function (on) {
+  visible = !!on;
+  if (visible) play(); else pause();
+};
+
+/* ---------------- clock ---------------- */
+function tick() {
+  var d = new Date(), h = d.getHours(), m = d.getMinutes();
+  $tm.textContent = (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+}
+var clockOn = sget("cfAqClock") !== null ? sget("cfAqClock") === "1" : CONFIG.clock;
+function setClock(on) { clockOn = on; sset("cfAqClock", on ? "1" : "0"); tglC($clk, "off", !on); }
+
+/* ---------------- touch: one tap = clock on/off (and starts the video if iOS held it back) ---------------- */
+var $tap = $(".tap"), last = 0, sx = 0, sy = 0;
+$tap.addEventListener("touchstart", function (e) { var t = e.touches[0]; sx = t.clientX; sy = t.clientY; }, false);
+$tap.addEventListener("touchend", function (e) {
+  e.preventDefault(); last = ms();
+  var t = e.changedTouches[0];
+  if (Math.abs(t.clientX - sx) > 15 || Math.abs(t.clientY - sy) > 15) return;   // a swipe, not a tap
+  onTap();
+}, false);
+$tap.addEventListener("click", function () { if (ms() - last > 800) onTap(); }, false);
+function onTap() {
+  var started = playing;
+  play();
+  if (started) setClock(!clockOn);   // the first tap only starts the video
+}
+
+/* ---------------- start ---------------- */
+document.addEventListener("touchmove", function (e) { e.preventDefault(); }, false);
+window.addEventListener("orientationchange", function () { setTimeout(size, 150); }, false);
+window.addEventListener("resize", function () { setTimeout(size, 80); }, false);
+size(); tick(); setInterval(tick, 5000); setClock(clockOn);
+// standalone (not inside the combined app): try at once; inside, the app calls cfVisible
+if (window.parent === window) play(); else visible = false;
+if (window.console) console.log("Aquarium v" + VERSION);
+})();
+</script>
+</body>
+</html>

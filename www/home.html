@@ -66,12 +66,12 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;color:#
 var CONFIG = {
   token: "",
   // screens, left to right
-  pages: ["clock.html", "photos.html", "music.html"],
+  pages: ["clock.html", "photos.html", "music.html", "aquarium.html"],   // drop "aquarium.html" if you have no video
   musicPage: 2,                                   // screen to jump to when music starts
   musicBackAfter: 180,                            // seconds after the music stops to go back (0 = stay)
   musicBackTo: 1,                                 // screen to go back to if the previous one isn't known (1 = photos)
   screenSelect: null,                             // pick the screen from HA (two-way), e.g.
-  // screenSelect: { entity: "input_select.frame_screen", options: ["Clock", "Photos", "Music"] },   // options in the order of pages
+  // screenSelect: { entity: "input_select.frame_screen", options: ["Clock", "Photos", "Music", "Aquarium"] },   // options in the order of pages
   night: null,                                    // night blackout, e.g.
   // night: { from: "23:00", to: "07:00", wake: 60, keepOnIf: ["light.living_room"] },   // tap = on for "wake" seconds; stays on while a light is on
   reloadButton: "",                               // input_button in HA that reloads the iPad, e.g. "input_button.frame_reload"
@@ -104,7 +104,7 @@ var CONFIG = {
 };
 /* ======================================================== */
 
-var VERSION = "2.0.0";
+var VERSION = "2.2.0";
 // UI language: "auto" follows the iPad's language (Turkish if it is set to Turkish, otherwise English)
 var LANG = (CONFIG.lang === "tr" || CONFIG.lang === "en") ? CONFIG.lang : (/^tr/i.test(navigator.language || "") ? "tr" : "en");
 var L10N = {
@@ -115,7 +115,7 @@ var L10N = {
     action: "{n}: müdahale gerekiyor", werror: "{n}: hata", aborting: "{n}: program iptal ediliyor", ready: "Çamaşırlar hazır",
     doorOpen: "Kapı açık", takeOut: "Kapıyı açıp çamaşırları alabilirsiniz", left: "{v} kaldı", ends: "Bitiş {v}",
     cold: "Soğuk", rpm: "{v} dev/dk", noSpin: "Sıkmasız",
-    timer: "Zamanlayıcı", timerDone: "Zamanlayıcı bitti", screens: ["Saat", "Fotoğraflar", "Müzik"],
+    timer: "Zamanlayıcı", timerDone: "Zamanlayıcı bitti", screens: ["Saat", "Fotoğraflar", "Müzik", "Akvaryum"],
     prog: { cotton: "Pamuklu", cotton_eco_4060: "Eco 40-60", easy_care: "Sentetik", mix: "Karışık", wool: "Yünlü",
       delicates_silk: "Narin / İpek", shirts_blouses: "Gömlek / Bluz", sport_fitness: "Spor", sport_shoes: "Spor ayakkabı",
       dark_wash: "Koyu renkler", outdoor: "Outdoor", curtains: "Perde", super_153045_super_15: "Hızlı 15'",
@@ -130,7 +130,7 @@ var L10N = {
     action: "{n}: action required", werror: "{n}: error", aborting: "{n}: aborting program", ready: "Laundry is ready",
     doorOpen: "Door is open", takeOut: "Open the door and take the laundry out", left: "{v} left", ends: "Ends {v}",
     cold: "Cold", rpm: "{v} rpm", noSpin: "No spin",
-    timer: "Timer", timerDone: "Timer done", screens: ["Clock", "Photos", "Music"],
+    timer: "Timer", timerDone: "Timer done", screens: ["Clock", "Photos", "Music", "Aquarium"],
     prog: { cotton: "Cotton", cotton_eco_4060: "Eco 40-60", easy_care: "Easy care", mix: "Mix", wool: "Wool",
       delicates_silk: "Delicates / Silk", shirts_blouses: "Shirts / Blouses", sport_fitness: "Sportswear", sport_shoes: "Trainers",
       dark_wash: "Dark wash", outdoor: "Outdoor", curtains: "Curtains", super_153045_super_15: "Super quick 15'",
@@ -169,7 +169,7 @@ for (var i = 0; i < PAGES.length; i++) {
   p.appendChild(f); track.appendChild(p);
   panes.push(p); frames.push(f);
   var d = document.createElement("i"); dots.appendChild(d);
-  (function (f) { f.onload = function () { hook(f); }; })(f);
+  (function (f, i) { f.onload = function () { hook(f); tellVisible(i); }; })(f, i);
 }
 
 function size() {
@@ -202,6 +202,12 @@ function go(n) {
   idx = n; sset("frameScreen", String(idx));
   place(0, true);
   if (changed) { showDots(); reportScreen(); }
+  for (var i = 0; i < frames.length; i++) tellVisible(i);
+}
+// pages that care (the aquarium video) learn whether they are on show; called right inside the
+// swipe's touchend, so iOS also counts it as the tap a video needs to start
+function tellVisible(i) {
+  try { var w = frames[i].contentWindow; if (w && w.cfVisible) w.cfVisible(i === idx); } catch (e) { /* not loaded */ }
 }
 
 /* ---------------- swipe ----------------
